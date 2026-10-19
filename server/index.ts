@@ -1,6 +1,7 @@
 // Servidor do Habblaud: observa as sessões abertas do Claude Code (todas as contas),
 // mantém o modelo do escritório e transmite via SSE. Sem dependências de runtime.
 //   npm run dev    -> tsx server/index.ts --dev (Vite em middleware mode, HMR no mesmo servidor)
+//   npm run demo   -> idem, com --demo (simulador ligado, como HABBLAUD_DEMO=1)
 //   npm start      -> node dist/server/index.js (serve dist/client)
 import http from 'node:http';
 import { join } from 'node:path';
@@ -37,6 +38,8 @@ import { ClaudeWatcher } from './sources/watcher';
 import { discoverCodexDirs } from './sources/codex/accounts';
 import { CodexHistory } from './sources/codex/history';
 import { CodexSource } from './sources/codex/source';
+import { OmpSource } from './sources/omp/source';
+import type { OmpLive } from './sources/omp/live';
 import { createBuildReader, readBuildInfo } from './build';
 import { UpdateChecker } from './updates/checker';
 import { getLocale, tr } from '../shared/i18n';
@@ -141,6 +144,11 @@ if (codex) agents.add(codex);
 // Eventos dos hooks do Codex (POST /api/codex/events, mod/habblaud-codex/hook.mjs): vão para a fonte do Codex ao vivo
 // (CodexLive); sem ela (nenhuma pasta do Codex ou HABBLAUD_CODEX=0) a rota responde {ok: false}.
 const codexLive: CodexLive | undefined = codex;
+// A do omp (quando há agent dir com sessions/; HABBLAUD_OMP=0 desliga) entra do mesmo jeito; `omp` também recebe os eventos
+// da extensão do Habblaud no omp (POST /api/omp/events, OmpLive); sem ela a rota responde {ok: false}.
+const omp = config.ompDirs.length ? new OmpSource({ accounts, office, dirs: config.ompDirs, env: process.env, home: config.home }) : undefined;
+if (omp) agents.add(omp);
+const ompLive: OmpLive | undefined = omp;
 late.office = office;
 late.agents = agents;
 // Página que pode responder pelo escritório: Host local na porta local; na remota, só com permissions liberado.
@@ -372,6 +380,7 @@ const api = createApiHandler({
     return recentFolders(history ? await history.list().catch(() => []) : [], rooms);
   },
   codexLive,
+  ompLive,
   stats,
   updates,
   remote: config.remote ? { is: isRemoteRequest, allows: (f) => config.remote!.allow.has(f) } : undefined,
@@ -491,6 +500,12 @@ server.listen(config.port, config.host, () => {
   } else {
     log.info(tr('   Codex: {0}.', [config.codex ? tr('nenhuma pasta do Codex encontrada (defina HABBLAUD_CODEX_DIRS)') : tr('desligado (HABBLAUD_CODEX=0)')]));
   }
+  if (omp) {
+    const open = omp.sources().reduce((n, s) => n + s.sessions, 0);
+    log.info(tr('   omp: {0} conta(s), {1} sessão(ões) aberta(s).', [omp.accountEntries().length, open]));
+  } else {
+    log.info(tr('   omp: {0}.', [config.omp ? tr('nenhuma pasta do omp com sessions/ encontrada (defina HABBLAUD_OMP_DIRS)') : tr('desligado (HABBLAUD_OMP=0)')]));
+  }
   if (office.isDemo()) log.info(tr('   Modo demonstração ligado (agentes simulados misturados aos reais).'));
   if (config.terminal) log.info(tr('   Terminal: ligado (acesso só local).'));
   else log.info(tr('   Terminal: desligado ({0}).', [terminalOffReason(process.env, config.host, config.inDocker)]));
@@ -566,3 +581,5 @@ function shutdown(signal: string): void {
 }
 process.on('SIGINT', () => shutdown('SIGINT'));
 process.on('SIGTERM', () => shutdown('SIGTERM'));
+// Ctrl+Break no console do Windows (no macOS e no Linux o Node só ignora o registro).
+process.on('SIGBREAK', () => shutdown('SIGBREAK'));

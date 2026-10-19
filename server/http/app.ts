@@ -4,9 +4,11 @@ import { NAME_MAX, parseAppearanceParts, parseCharacterName, parseSeed } from '.
 import type { AccessInfo, AgentInfo, ModSummary, OfficeSnapshot, SourceInfo, UpdateStatus } from '../../shared/types';
 import type { AccountsService } from '../accounts/service';
 import { handleCodexEvent } from '../codex/http';
+import { handleOmpEvent } from '../omp/http';
 import type { DayStatsService } from '../history/daystats';
 import type { Office } from '../model/office';
 import type { CodexLive } from '../sources/codex/live';
+import type { OmpLive } from '../sources/omp/live';
 import type { SessionLookup } from '../sources/source';
 import { isJsonContentType, isLoopbackHost } from './guard';
 import type { RemoteFeature } from './remote';
@@ -63,6 +65,12 @@ export interface ApiDeps {
    * não dependem da trava do terminal).
    */
   codexLive?: CodexLive;
+  /**
+   * Fonte do omp ao vivo: recebe os eventos da extensão do Habblaud no omp (POST /api/omp/events, server/omp/http.ts).
+   * Sem ela a rota responde {ok: false}. A mesma trava de /api/codex/events: Host local e, fora do Docker, conexão pelo
+   * loopback.
+   */
+  ompLive?: OmpLive;
   /** Novo agente pelo escritório (/api/spawn e, para o auxiliar do host, /api/host/spawn/*; server/spawn/spawn.ts). */
   spawn?: SpawnService;
   /** Pastas sugeridas no "Novo agente" (GET /api/spawn/folders; spawn/folders.ts): projetos recentes. */
@@ -125,6 +133,7 @@ function isLocalOnlyPath(path: string): boolean {
     path === '/api/mod/inbox' ||
     path === '/api/mod/inbox/ack' ||
     path.startsWith('/api/codex/') ||
+    path.startsWith('/api/omp/') ||
     path.startsWith('/api/host/')
   );
 }
@@ -376,6 +385,7 @@ export function createApiHandler(deps: ApiDeps): (req: IncomingMessage, res: Ser
           pty: !!deps.pty && !remote,
           messages: !!deps.messages && (!remote || trusted(req, 'messages')),
           codexEvents: !!deps.codexLive,
+          ompEvents: !!deps.ompLive,
           updates: updatesSummary(deps.updates?.status()),
           sources: deps.sources(),
           accounts: accounts.allEntries().map((a) =>
@@ -487,6 +497,14 @@ export function createApiHandler(deps: ApiDeps): (req: IncomingMessage, res: Ser
       else if (!trusted(req) || (!deps.inDocker && !isLoopbackAddress(req.socket.remoteAddress))) {
         sendJson(res, 403, { error: denied(req, tr('eventos do Codex só são aceitos pelo próprio computador (http://localhost ou http://127.0.0.1)')) });
       } else handleCodexEvent(req, res, { live: deps.codexLive, entries: () => accounts.entriesOf('codex') }).catch((err) => fail(res, err));
+      return true;
+    }
+    if (path === '/api/omp/events') {
+      // Eventos da extensão do omp: só observam, mas só valem vindos do próprio computador (a mesma trava do Codex).
+      if (method !== 'POST') methodNotAllowed(res, 'POST');
+      else if (!trusted(req) || (!deps.inDocker && !isLoopbackAddress(req.socket.remoteAddress))) {
+        sendJson(res, 403, { error: denied(req, tr('eventos do omp só são aceitos pelo próprio computador (http://localhost ou http://127.0.0.1)')) });
+      } else handleOmpEvent(req, res, { live: deps.ompLive }).catch((err) => fail(res, err));
       return true;
     }
     if (path === '/api/spawn' || path.startsWith('/api/spawn/')) {

@@ -41,7 +41,7 @@ import {
 import { access } from '../net/access';
 import { PermissionCard } from './permission';
 import { canRenameRoom } from './roomrename';
-import { accountChipLabel, accountProvider, CODEX_LIVE_HINT, codexApprovalLabel, providerOf } from './provider';
+import { accountChipLabel, accountProvider, CODEX_LIVE_HINT, codexApprovalLabel, PROVIDER_NAME, providerOf } from './provider';
 import { ptyControllable } from './ptyapi';
 import { createAgentRow, updateAgentRow } from './rows';
 import { SocialSection } from './social';
@@ -531,6 +531,8 @@ class AgentView {
     const room = this.ctx.store.room(a.roomId);
     const provider = providerOf(a);
     const codex = provider === 'codex';
+    // Só o Claude Code pergunta pelo AskUserQuestion e responde pelo plugin; o Codex e o omp não (explícito, para o omp não herdar por engano).
+    const claudeLike = provider === 'claude';
 
     updateAvatar(this.avatar, a, 'lg');
     setStyleVar(this.avatar, '--acc', account?.color ?? '#8b98b3');
@@ -573,17 +575,17 @@ class AgentView {
     setHidden(this.alert, !waiting || this.perm.visible);
     if (waiting) {
       const accName = account?.name ?? a.account;
-      // Codex: "Vá ao Codex (Conta X)"; sem repetir quando a conta já se chama "Codex".
-      const where = codex ? tr('ao Codex{0}', [/codex/i.test(accName) ? '' : ` (${accName})`]) : tr('ao terminal da {0}', [accName]);
+      // Codex e omp: "Vá ao Codex (Conta X)" / "Vá ao omp"; sem repetir quando a conta já se chama "Codex".
+      const where = codex ? tr('ao Codex{0}', [/codex/i.test(accName) ? '' : ` (${accName})`]) : provider === 'omp' ? tr('ao omp') : tr('ao terminal da {0}', [accName]);
       setText(this.alertText, tr('Vá {0} em {1} para responder{2}', [where, room?.name ?? tr('seu projeto'), a.waitingFor ? `: ${a.waitingFor}` : '.']));
     }
-    // Perguntas do AskUserQuestion (só leitura): o Codex não pergunta pelo escritório.
-    const asking = waiting && !codex && a.activity?.kind === 'ask' ? a.activity : undefined;
+    // Perguntas do AskUserQuestion (só leitura): o Codex e o omp não perguntam pelo escritório.
+    const asking = waiting && claudeLike && a.activity?.kind === 'ask' ? a.activity : undefined;
     this.renderQuestions(asking);
     // Sem o pedido no escritório: dá para responder por aqui com o plugin (só com a trava local, como o cartão). O Codex
-    // não responde perguntas pelo escritório.
+    // e o omp não respondem perguntas pelo escritório.
     const answerable =
-      !codex && !!asking?.questions?.length && !this.perm.visible && !this.ctx.store.mock && !!this.ctx.store.snapshot?.meta.terminal && access().permissions;
+      claudeLike && !!asking?.questions?.length && !this.perm.visible && !this.ctx.store.mock && !!this.ctx.store.snapshot?.meta.terminal && access().permissions;
     setHidden(this.alertAnswerHint, !answerable);
 
     // Esperando o shell.
@@ -720,7 +722,7 @@ class AgentView {
             ? tr('O agente já saiu do escritório.')
             : kind === 'ao vivo'
               ? tr('Ver a conversa desta sessão como no {0}, ao vivo{1} (T)', [
-                  provider === 'codex' ? 'Codex' : tr('terminal do Claude Code'),
+                  provider === 'claude' ? tr('terminal do Claude Code') : PROVIDER_NAME[provider],
                   this.pty.enabled && ptyControllable(this.last) ? tr('; "Assumir daqui" continua nela aqui') : '',
                 ])
               : kind === 'interativo'
@@ -736,7 +738,8 @@ class AgentView {
     st.set('tokensIn', formatTokens(s.tokensIn));
     st.set('tokensOut', formatTokens(s.tokensOut));
     st.set('cost', s.costUSD !== undefined ? formatUSD(s.costUSD) : null);
-    const codex = providerOf(a) === 'codex';
+    const provider = providerOf(a);
+    const codex = provider === 'codex';
     const hasLines = s.linesAdded !== undefined || s.linesRemoved !== undefined;
     st.show('lines', hasLines);
     setText(this.linesPlus, `+${formatInt(s.linesAdded ?? 0)}`);
@@ -744,9 +747,13 @@ class AgentView {
     st.set('subs', a.kind === 'main' ? formatInt(s.subagents) : null);
     st.set('model', prettyModel(a.model));
     st.set('branch', a.gitBranch ?? null);
-    // Codex: a política de aprovação (quando o servidor a manda) no lugar do modo de permissão do Claude Code.
+    // Codex: a política de aprovação (quando o servidor a manda) no lugar do modo de permissão do Claude Code. omp: sem
+    // modo de permissão no transcript; a linha só aparece se o servidor mandar um.
     st.label('perm', codex ? tr('Aprovações') : tr('Permissões'));
-    st.set('perm', a.kind !== 'main' ? null : codex ? (a.permissionMode ? codexApprovalLabel(a.permissionMode) : null) : permissionLabel(a.permissionMode));
+    st.set(
+      'perm',
+      a.kind !== 'main' ? null : codex ? (a.permissionMode ? codexApprovalLabel(a.permissionMode) : null) : provider === 'omp' && !a.permissionMode ? null : permissionLabel(a.permissionMode),
+    );
 
     setText(this.sessionValue, a.sessionId);
     setTitle(this.sessionValue, a.sessionId);

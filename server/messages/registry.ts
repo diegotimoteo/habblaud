@@ -53,6 +53,7 @@ export const ERR_CODEX_SLOW = tr('o Codex demorou demais com as mensagens anteri
 export const ERR_CODEX_NOT_CONFIRMED = tr('o auxiliar do Codex não confirmou a entrega');
 export const ERR_CODEX_HOME = tr('a pasta da conta do Codex deste agente é desconhecida');
 export const ERR_CODEX_REFUSED = tr('o codex queue não aceitou a mensagem');
+export const ERR_OMP_UNAVAILABLE = tr('a sessão não está com a extensão do Habblaud no omp (npm run omp:install)');
 
 const ERROR_MAX = 300;
 const ID_MAX = 300;
@@ -152,7 +153,10 @@ const isFinal = (e: Entry) => e.msg.status === 'delivered' || e.msg.status === '
 function unavailableReason(a: AgentInfo, reachable: boolean): string | undefined {
   if (a.kind !== 'main') return tr('subagentes não recebem mensagens: mande para o agente principal');
   if (!present(a)) return tr('o agente já saiu do escritório');
-  if (!reachable) return a.provider === 'codex' ? ERR_CODEX_UNAVAILABLE : tr('a sessão não está com o plugin habblaud-mensagens conectado (npm run mod:install)');
+  if (!reachable) {
+    if (a.provider === 'codex') return ERR_CODEX_UNAVAILABLE;
+    return a.provider === 'omp' ? ERR_OMP_UNAVAILABLE : tr('a sessão não está com o plugin habblaud-mensagens conectado (npm run mod:install)');
+  }
   return undefined;
 }
 
@@ -294,7 +298,7 @@ export class MessageRegistry {
     const session = shortStr(r?.session, ID_MAX);
     if (!r || !session) throw new InvalidRequest('esperado {session, account?}');
     const account = shortStr(r.account, ID_MAX);
-    // O plugin é do Claude Code: agentes do Codex nunca recebem por aqui.
+    // O plugin do Claude Code e a extensão do omp usam esta rota (cada sessão tem o próprio id); agentes do Codex nunca recebem por aqui.
     const agent = this.opts.office
       .list()
       .find((a) => a.kind === 'main' && a.provider !== 'codex' && a.sessionId === session && (!account || a.account === account) && present(a));
