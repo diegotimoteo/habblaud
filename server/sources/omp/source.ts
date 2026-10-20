@@ -19,7 +19,12 @@
 // Status: aplicado por bordas (início/fim de turno no arquivo, eventos), a informação mais nova vence; o 'waiting' de
 // uma aprovação no terminal (approval_requested) só sai com approval_resolved, fim de turno ou fechamento. Boot curto e
 // síncrono, com endBoot num `finally`.
+//
+// Uso do plano (opts.usage, config.ompUsage): com uma sessão principal aberta, roda `omp usage --json` (bin.ts) na
+// agent dir da conta a cada USAGE_EVERY_MS e empurra ao AccountsService as janelas do provedor do modelo em uso
+// (usage.ts). Uma consulta em voo por vez; troca de provedor lê na hora; falha tenta de novo em USAGE_RETRY_MS.
 import { watch, type FSWatcher } from 'node:fs';
+import { homedir } from 'node:os';
 import { join } from 'node:path';
 import type { Activity, AgentStatus, SourceInfo } from '../../../shared/types';
 import { tr } from '../../../shared/i18n';
@@ -37,6 +42,8 @@ import { LivenessCache, OmpIndex, readOmpHead, statFile, subagentsOf, type OmpFi
 import type { OmpLive } from './live';
 import { createOmpTerminalParser } from './terminal';
 import { createOmpState, describeOmpTool, parseOmpLine, type OmpLineResult, type OmpState } from './parser';
+import { ompBinFrom, runOmpUsage, type RunOmpUsage } from './bin';
+import { ompProviderOf, parseOmpUsage } from './usage';
 import type { OmpHead } from './parser';
 
 /** Varredura completa das pastas de sessões (o resto do polling só re-confere os arquivos conhecidos). */
@@ -51,6 +58,10 @@ const BACKLOG_MAX = 400;
 const READ_ROUNDS = 64;
 const MAIN_ROLE = tr('Agente principal (omp)');
 const SUB_ROLE = tr('Subagente (omp)');
+/** Intervalo entre leituras do `omp usage` de uma conta com sessão aberta (o omp tem cache próprio). */
+export const USAGE_EVERY_MS = 5 * 60_000;
+/** Depois de uma leitura que falhou. */
+const USAGE_RETRY_MS = 60_000;
 
 export interface OmpSourceOptions {
   accounts: AccountsService;
@@ -63,6 +74,12 @@ export interface OmpSourceOptions {
   pollMs?: number;
   /** Desliga o fs.watch (testes). */
   watch?: boolean;
+  /** Uso do plano por `omp usage --json` (config.ompUsage): desligado = nunca roda o omp. */
+  usage?: boolean;
+  /** Injeção para testes: substitui runOmpUsage. */
+  runUsage?: RunOmpUsage;
+  /** Injeção para testes: caminho do omp (padrão ompBinFrom). */
+  ompBin?: string;
 }
 
 interface OmpAccount {
@@ -75,6 +92,11 @@ interface OmpAccount {
   liveness: LivenessCache;
   scanAt: number;
   error?: string;
+  /** Última leitura do `omp usage` iniciada (0 = nunca) e o provedor lido nela. */
+  usageAt: number;
+  usageProvider?: string;
+  usageBusy: boolean;
+  usageFailed: boolean;
 }
 
 interface Tracker {
@@ -134,6 +156,8 @@ export class OmpSource implements AgentSource, OmpLive {
   private readonly now: () => number;
   private readonly useWatch: boolean;
   private stopped = false;
+  /** Executável do omp para o uso do plano (null = não encontrado; undefined = ainda não procurado). */
+  private ompBin: string | null | undefined;
 
   constructor(private readonly opts: OmpSourceOptions) {
     this.now = opts.now ?? Date.now;
@@ -155,6 +179,9 @@ export class OmpSource implements AgentSource, OmpLive {
       index: new OmpIndex(e.dir),
       liveness: new LivenessCache(),
       scanAt: -Infinity,
+      usageAt: 0,
+      usageBusy: false,
+      usageFailed: false,
     }));
   }
 
@@ -261,6 +288,53 @@ export class OmpSource implements AgentSource, OmpLive {
     }
     for (const t of [...this.trackers.values()]) if (t.kind === 'main') this.syncSubs(t, now, boot);
     this.cleanup(now);
+    if (this.opts.usage) this.pollUsage(now);
+  }
+
+  /** Lê o uso do plano das contas com sessão aberta, no máximo uma consulta em voo (ver cabeçalho). */
+  private pollUsage(now: number): void {
+    if (this.accs.some((a) => a.usageBusy)) return;
+    const env = this.opts.env ?? process.env;
+    if (this.ompBin === undefined) this.ompBin = this.opts.ompBin ?? ompBinFrom(env, this.opts.home ?? homedir()) ?? null;
+    const bin = this.ompBin;
+    if (!bin) {
+      log.warnOnce('omp-usage-bin', tr('omp: executável não encontrado; o uso do plano das contas do omp fica de fora (HABBLAUD_OMP_BIN).'));
+      return;
+    }
+    for (const acc of this.accs) {
+      let main: Tracker | undefined;
+      for (const t of this.trackers.values()) {
+        if (t.acc === acc && t.kind === 'main' && t.inOffice && (t.state.lastAt ?? 0) >= (main?.state.lastAt ?? -1)) main = t;
+      }
+      const provider = ompProviderOf(main?.state.model);
+      if (!provider) continue;
+      const due =
+        acc.usageAt === 0 || provider !== acc.usageProvider || now - acc.usageAt >= (acc.usageFailed ? USAGE_RETRY_MS : USAGE_EVERY_MS);
+      if (!due) continue;
+      acc.usageBusy = true;
+      acc.usageAt = now;
+      acc.usageProvider = provider;
+      (this.opts.runUsage ?? runOmpUsage)(bin, acc.dir, env)
+        .then((raw) => {
+          if (this.stopped) return;
+          const u = parseOmpUsage(raw, provider, this.now());
+          if (!u) {
+            acc.usageFailed = true;
+            log.warnOnce(`omp-usage-parse:${acc.id}:${provider}`, tr('omp: a saída de "omp usage --json" não trouxe o provedor {0} da conta {1}.', [provider, acc.id]));
+            return;
+          }
+          acc.usageFailed = false;
+          this.opts.accounts.setUsage(acc.id, u);
+        })
+        .catch((err) => {
+          acc.usageFailed = true;
+          log.warnOnce(`omp-usage:${acc.id}:${errMsg(err)}`, tr('omp: "omp usage" falhou na conta {0}: {1}', [acc.id, errMsg(err)]));
+        })
+        .finally(() => {
+          acc.usageBusy = false;
+        });
+      return;
+    }
   }
 
   /** Varre uma agent dir: sessões vivas ganham tracker (as outras só entram se já houver um). */
