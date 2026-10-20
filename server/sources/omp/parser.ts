@@ -186,7 +186,7 @@ export function describeOmpTool(rawName: string, rawInput: unknown): { desc: Act
 // ------------------------------------------------------------------ estado
 
 export interface OmpState {
-  /** `provedor/modelo` do último model_change (ou o `model` da última resposta). */
+  /** `provedor/modelo` do último model_change (ou o `provider`/`model` da última resposta). */
   model?: string;
   /** Título: title_change > slot da linha 1 > primeira instrução. */
   title?: string;
@@ -370,8 +370,10 @@ class OmpLineParser {
 
   private assistant(m: Rec): void {
     const model = str(m.model);
+    const provider = str(m.provider);
     // O modelo que respondeu vale mais que o model_change (trocas temporárias, como o modo plano, voltam sem aviso).
-    if (model) this.setModel(model);
+    // A resposta traz provedor e modelo separados: juntos, como no model_change (`provedor/modelo`).
+    if (model) this.setModel(provider && !model.includes('/') ? `${provider}/${model}` : model);
     const blocks = Array.isArray(m.content) ? m.content : [];
     for (const raw of blocks) {
       const b = rec(raw);

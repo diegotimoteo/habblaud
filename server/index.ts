@@ -146,7 +146,9 @@ if (codex) agents.add(codex);
 const codexLive: CodexLive | undefined = codex;
 // A do omp (quando há agent dir com sessions/; HABBLAUD_OMP=0 desliga) entra do mesmo jeito; `omp` também recebe os eventos
 // da extensão do Habblaud no omp (POST /api/omp/events, OmpLive); sem ela a rota responde {ok: false}.
-const omp = config.ompDirs.length ? new OmpSource({ accounts, office, dirs: config.ompDirs, env: process.env, home: config.home }) : undefined;
+const omp = config.ompDirs.length
+  ? new OmpSource({ accounts, office, dirs: config.ompDirs, env: process.env, home: config.home, usage: config.ompUsage })
+  : undefined;
 if (omp) agents.add(omp);
 const ompLive: OmpLive | undefined = omp;
 late.office = office;
@@ -502,7 +504,12 @@ server.listen(config.port, config.host, () => {
   }
   if (omp) {
     const open = omp.sources().reduce((n, s) => n + s.sessions, 0);
-    log.info(tr('   omp: {0} conta(s), {1} sessão(ões) aberta(s).', [omp.accountEntries().length, open]));
+    const usage = config.ompUsage
+      ? tr('ligado (omp usage a cada 5 min)')
+      : config.inDocker
+        ? tr('desligado no Docker')
+        : tr('desligado (HABBLAUD_OMP_USAGE=0)');
+    log.info(tr('   omp: {0} conta(s), {1} sessão(ões) aberta(s); uso do plano: {2}.', [omp.accountEntries().length, open, usage]));
   } else {
     log.info(tr('   omp: {0}.', [config.omp ? tr('nenhuma pasta do omp com sessions/ encontrada (defina HABBLAUD_OMP_DIRS)') : tr('desligado (HABBLAUD_OMP=0)')]));
   }

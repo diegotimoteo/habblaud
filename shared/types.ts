@@ -283,15 +283,21 @@ export interface AccountUsage {
   sevenDayOpus?: UsageWindow;
   sevenDaySonnet?: UsageWindow;
   /**
-   * Origem dos números (todas são arquivos locais gravados pela própria ferramenta):
+   * Origem dos números (arquivos locais gravados pela própria ferramenta; só 'omp' vem de um comando):
    * - 'statusline': capturado ao vivo e gravado em ~/.habblaud/usage/<conta>.json pelo mod do Habblaud
    *   (mod/habblaud, recomendado) ou pelo scripts/statusline-tap.mjs (campo rate_limits do statusline);
    * - 'cache': `cachedUsageUtilization` gravado pelo próprio Claude Code (atualiza quando alguém roda /usage);
-   * - 'codex': `rate_limits` dos arquivos de sessão do Codex (só se renovam enquanto alguma sessão roda).
+   * - 'codex': `rate_limits` dos arquivos de sessão do Codex (só se renovam enquanto alguma sessão roda);
+   * - 'omp': janelas de 5 h e 7 d do provedor do modelo em uso, lidas de `omp usage --json` (o omp
+   *   consulta o provedor com as credenciais dele e o cache dele; o Habblaud só roda o comando).
    */
-  source: 'cache' | 'statusline' | 'codex';
+  source: 'cache' | 'statusline' | 'codex' | 'omp';
   /** Quem gravou o arquivo ao vivo ('statusline'): o mod do Habblaud no Claude Code ou o tap de statusline. */
   via?: 'mod' | 'tap';
+  /** Só 'omp': provedor do omp de onde vieram as janelas (`anthropic`, `openai-codex`, `google-antigravity`…). */
+  ompProvider?: string;
+  /** Só 'omp': explicação do próprio omp quando o provedor não tem janelas de 5 h/7 d (ex.: Ollama), como veio (inglês). */
+  note?: string;
   /**
    * Conta sem cota nem créditos para usar agora (Codex: `rate_limits.primary` nulo, ex.: créditos do workspace
    * esgotados). Não é "0% usado": as janelas ficam ausentes.
