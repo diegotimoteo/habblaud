@@ -39,6 +39,8 @@ do meio (0.**3**.0).
 - Agente que ficava "trabalhando" depois de terminar: duas gravações do registro de sessões no mesmo tique do relógio
   e do mesmo tamanho ("busy" -> "idle") não eram relidas. Acontecia mais no Windows (mtime avança a cada ~16 ms).
 - Testes que passavam do prazo ou dependiam de `/` e de permissões POSIX agora passam no Windows.
+- Em inglês, espanhol e francês, a contagem até o reinício do uso (e as outras contagens regressivas) saía com o "em"
+  em português ("resets at 18:50 (em 3 h 52 min)"); em francês, as durações de dias usavam "d" no lugar de "j".
 
 ## [1.0.3] - 2026-10-16
 

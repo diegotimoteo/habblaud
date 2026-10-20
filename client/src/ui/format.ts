@@ -39,7 +39,8 @@ export function formatDuration(ms: number): string {
   }
   const d = Math.floor(v / DAY);
   const h = Math.floor((v % DAY) / HOUR);
-  return h ? `${d} d ${h} h` : `${d} d`;
+  // "d" de dia muda com o idioma (em francês, "j", como no relativeTime).
+  return h ? tr('{0} d {1} h', [d, h]) : tr('{0} d', [d]);
 }
 
 /**
@@ -61,7 +62,7 @@ export function formatCountdown(target: number, now: number): string {
   const diff = target - now;
   if (diff <= 0) return tr('agora');
   if (diff < MINUTE) return tr('em menos de 1 min');
-  return `em ${formatDuration(diff)}`;
+  return tr('em {0}', [formatDuration(diff)]);
 }
 
 function startOfDay(t: number): number {
@@ -100,7 +101,7 @@ export function compactDuration(ms: number): string {
   }
   const d = Math.floor(v / DAY);
   const h = Math.floor((v % DAY) / HOUR);
-  return h ? `${d}d${h}h` : `${d}d`;
+  return h ? tr('{0}d{1}h', [d, h]) : tr('{0}d', [d]);
 }
 
 export const FIVE_HOURS_MS = 5 * HOUR;
