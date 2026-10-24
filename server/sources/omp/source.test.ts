@@ -232,7 +232,7 @@ describe('fonte do omp: presença pelo arquivo', () => {
     expect(c.agents()).toEqual([]);
   });
 
-  it('sessão de uma fixture real em andamento: agente na sala do cwd com o título do title_change', () => {
+  it('sessão de uma fixture real em andamento: cwd sem .git, sala do projeto que as ferramentas tocam, com o título do title_change', () => {
     const c = setup();
     const id = '01a13a52-fa11-7000-b7af-bfa3171c863d';
     const path = c.path(id);
@@ -240,7 +240,7 @@ describe('fonte do omp: presença pelo arquivo', () => {
     utimesSync(path, new Date(c.now()), new Date(c.now())); // a cópia pode manter o mtime da fixture
     c.source.boot();
     const a = c.agent(`omp:${id}`)!;
-    expect(a).toMatchObject({ provider: 'omp', sessionId: id, roomId: normalizeCwd('C:\\Users\\dev\\proj'), title: 'Título da sessão', status: 'working' });
+    expect(a).toMatchObject({ provider: 'omp', sessionId: id, roomId: normalizeCwd('C:\\Users\\dev\\proj\\src'), title: 'Título da sessão', status: 'working' });
     expect(a.model).toBe('claude-fable-5-1');
     expect(a.stats.tokensIn).toBeGreaterThan(0);
   });

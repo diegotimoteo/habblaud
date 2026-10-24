@@ -23,7 +23,7 @@
 // Uso do plano (opts.usage, config.ompUsage): com uma sessão principal aberta, roda `omp usage --json` (bin.ts) na
 // agent dir da conta a cada USAGE_EVERY_MS e empurra ao AccountsService as janelas do provedor do modelo em uso
 // (usage.ts). Uma consulta em voo por vez; troca de provedor lê na hora; falha tenta de novo em USAGE_RETRY_MS.
-import { watch, type FSWatcher } from 'node:fs';
+import { existsSync, watch, type FSWatcher } from 'node:fs';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
 import type { Activity, AgentStatus, SourceInfo } from '../../../shared/types';
@@ -41,7 +41,7 @@ import { detectOmpAccounts, OMP_SESSIONS_DIR } from './accounts';
 import { LivenessCache, OmpIndex, readOmpHead, statFile, subagentsOf, type OmpFile } from './files';
 import type { OmpLive } from './live';
 import { createOmpTerminalParser } from './terminal';
-import { createOmpState, describeOmpTool, parseOmpLine, type OmpLineResult, type OmpState } from './parser';
+import { createOmpState, describeOmpTool, parseOmpLine, projectDir, type OmpLineResult, type OmpState } from './parser';
 import { ompBinFrom, runOmpUsage, type RunOmpUsage } from './bin';
 import { ompProviderOf, parseOmpUsage } from './usage';
 import type { OmpHead } from './parser';
@@ -446,8 +446,14 @@ export class OmpSource implements AgentSource, OmpLive {
 
   // ---------------------------------------------------------------- presença
 
+  /**
+   * Sala do agente: o cwd da sessão; se o cwd não é um repositório git (pasta que junta vários projetos), a pasta do
+   * projeto em que as últimas ferramentas trabalharam (projectDir).
+   */
   private cwdOf(t: Tracker): string | undefined {
-    return t.head?.header?.cwd ?? t.eventCwd;
+    const cwd = t.head?.header?.cwd ?? t.eventCwd;
+    if (!cwd || t.kind !== 'main' || existsSync(join(cwd, '.git'))) return cwd;
+    return projectDir(cwd, t.state.paths);
   }
 
   private beatRecent(t: Tracker, now: number): boolean {
@@ -485,6 +491,7 @@ export class OmpSource implements AgentSource, OmpLive {
       return;
     }
     if (!t.inOffice) this.enter(t, now);
+    else if (t.kind === 'main') this.opts.office.moveMain(t.key, this.cwdOf(t)!);
   }
 
   private enter(t: Tracker, now: number): void {
