@@ -84,6 +84,14 @@ describe('saída limpa (session_exit)', () => {
     expect(r.state.model).toBe('anthropic/claude-sonnet-5-5');
   });
 
+  it('thinking_level_change (linha real do omp 18.12.6) vira thinking', () => {
+    const state = createOmpState();
+    const line = '{"type":"thinking_level_change","id":"6fcd91f3","parentId":null,"timestamp":"2026-10-24T14:14:42.698Z","configured":"low","thinkingLevel":"low"}';
+    const res = parseOmpLine(state, line, { idPrefix: 'omp:t', now: 1 });
+    expect(state.thinking).toBe('low');
+    expect(res.changed).toBe(true);
+  });
+
   it('o mesmo arquivo lido de novo gera os mesmos ids (o Office não duplica)', () => {
     const again = run('main-clean-exit.jsonl');
     const ids = (x: Run) => x.results.flatMap((y) => y.activities.map((a) => a.activity.id));

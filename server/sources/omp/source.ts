@@ -135,6 +135,8 @@ interface Tracker {
   /** Subagente que já entregou. */
   subDone: boolean;
   watcher?: FSWatcher;
+  /** Modelos informados pela extensão no session_start. */
+  models?: string[];
 }
 
 /** `anthropic/claude-sonnet-5-5` → `claude-sonnet-5-5`. */
@@ -677,6 +679,8 @@ export class OmpSource implements AgentSource, OmpLive {
     if (s.title) summary.title = s.title;
     const model = shortModel(s.model);
     if (model) summary.model = model;
+    if (s.thinking) summary.thinking = s.thinking;
+    if (t.models) summary.models = t.models;
     if (s.firstAt !== undefined) summary.firstAt = s.firstAt;
     if (s.lastAt !== undefined) summary.lastAt = s.lastAt;
     this.opts.office.applyTranscript(t.key, summary);
@@ -730,6 +734,10 @@ export class OmpSource implements AgentSource, OmpLive {
       }
     }
     t.extSeen = true;
+    if (ev.models && JSON.stringify(ev.models) !== JSON.stringify(t.models)) {
+      t.models = ev.models;
+      this.applySummary(t);
+    }
     switch (ev.event) {
       case 'session_start':
         t.lastBeatAt = now;

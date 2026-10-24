@@ -162,6 +162,10 @@ export interface AgentInfo {
   /** Shells rodando que o agente espera: em segundo plano e o comando em primeiro plano ainda sem resultado. */
   shells?: ShellJob[];
   model?: string;
+  /** Nível de raciocínio (thinking) da sessão omp: off, minimal, low, medium, high, xhigh ou max. */
+  thinking?: string;
+  /** Modelos que a sessão omp aceita (`provedor/id`), informados pela extensão; só no agente principal. */
+  models?: string[];
   gitBranch?: string;
   permissionMode?: string;
   startedAt: number;
@@ -740,6 +744,8 @@ export interface PtyInfo {
 /** Mensagem entregue ao plugin habblaud-mensagens (POST /api/mod/inbox). */
 export interface InboxMessage {
   id: string;
-  /** O texto como foi digitado: o plugin o manda à sessão como se você o tivesse digitado. */
+  /** O texto como foi digitado: o plugin o manda à sessão como se você o tivesse digitado. Vazio quando há `control`. */
   text: string;
+  /** Troca de modelo e/ou raciocínio da sessão omp (POST /api/messages/control). */
+  control?: { model?: string; thinking?: string };
 }

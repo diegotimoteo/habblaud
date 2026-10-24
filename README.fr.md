@@ -676,6 +676,7 @@ fournisseur sans ces fenêtres (Ollama, Codex gratuit) apparaît comme « pas d'
 - **Envoyer des messages :** la zone **Envoyer un message** fonctionne pour omp avec l'extension installée. Quand
   l'agent est inactif, le message démarre un nouveau tour ; s'il travaille, il arrive comme suite juste après le tour en
   cours, sans interrompre ce qu'il fait.
+- **Modèle et raisonnement :** avec l'extension installée, les sélecteurs Modèle et Raisonnement du tiroir changent la session en cours (`pi.setModel` / `setThinkingLevel`) ; depuis le téléphone, seulement avec `messages` dans `HABBLAUD_REMOTE_ALLOW`.
 - **Validations**, de deux façons :
   - **Par défaut :** quand omp demande une validation dans le terminal, le personnage lève la main et le bureau montre
     quel outil attend ; la décision reste dans le terminal.

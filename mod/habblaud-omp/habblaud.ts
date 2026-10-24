@@ -105,6 +105,7 @@ export interface OmpContext {
     confirm(title: string, message: string, options?: { signal?: AbortSignal }): Promise<boolean>;
     notify(message: string, type?: 'info' | 'warning' | 'error'): void;
   };
+  models?: { list(): { provider: string; id: string }[]; resolve?(spec: string): unknown };
   sessionManager: {
     getSessionId(): string;
     getSessionFile?(): string | undefined;
@@ -115,6 +116,9 @@ export interface OmpContext {
 export interface OmpApi {
   on(event: string, handler: (event: Rec, ctx: OmpContext) => unknown): void;
   sendUserMessage(text: string, options?: { deliverAs?: 'followUp' }): void;
+  /** Troca o modelo da sessão; o omp devolve false quando não há credencial para ele. */
+  setModel?(model: unknown): Promise<boolean> | boolean;
+  setThinkingLevel?(level: string): void;
 }
 
 export interface ToolCallResult {
@@ -166,6 +170,8 @@ export function portOf(env: NodeJS.ProcessEnv, home: string): number {
 export interface InboxMessage {
   id: string;
   text: string;
+  /** Troca de modelo e/ou raciocínio (POST /api/messages/control): sem texto. */
+  control?: { model?: string; thinking?: string };
 }
 
 export interface AckResult {
@@ -193,7 +199,14 @@ export function parseInbox(text: string): InboxMessage[] | undefined {
     if (!item || typeof item !== 'object') continue;
     const m = item as Rec;
     if (typeof m.id !== 'string' || !m.id) continue;
-    out.push({ id: m.id, text: typeof m.text === 'string' ? m.text : '' });
+    const msg: InboxMessage = { id: m.id, text: typeof m.text === 'string' ? m.text : '' };
+    const c = m.control && typeof m.control === 'object' ? (m.control as Rec) : undefined;
+    if (c) {
+      msg.control = {};
+      if (typeof c.model === 'string' && c.model) msg.control.model = c.model;
+      if (typeof c.thinking === 'string' && c.thinking) msg.control.thinking = c.thinking;
+    }
+    out.push(msg);
   }
   return out;
 }
@@ -320,6 +333,9 @@ export function create(pi: OmpApi, deps: Deps): void {
     return sent;
   }
 
+  /** Modelos da sessão atual: lidos no session_start e repetidos no batimento (o Habblaud pode ter reiniciado). */
+  let models: string[] | undefined;
+
   function sessionFields(ctx: OmpContext): Partial<OmpEvent> {
     const out: Partial<OmpEvent> = {};
     try {
@@ -330,6 +346,12 @@ export function create(pi: OmpApi, deps: Deps): void {
     } catch {
       // contexto já descartado: só o id
     }
+    try {
+      models = ctx.models?.list().map((m) => `${m.provider}/${m.id}`);
+    } catch {
+      models = undefined; // sem lista de modelos: o seletor da gaveta usa só o atual
+    }
+    if (models?.length) out.models = models;
     return out;
   }
 
@@ -359,7 +381,7 @@ export function create(pi: OmpApi, deps: Deps): void {
     if (closed) return;
     if (!heartbeat) {
       heartbeat = setInterval(() => {
-        if (sessionId) void emit('heartbeat', sessionId);
+        if (sessionId) void emit('heartbeat', sessionId, models?.length ? { models } : {});
       }, OMP_HEARTBEAT_MS);
       heartbeat.unref?.();
     }
@@ -461,9 +483,14 @@ export function create(pi: OmpApi, deps: Deps): void {
    * Entrega cada mensagem, na ordem. Nunca lança. A primeira, com o agente livre, inicia um turno; o que vier depois
    * (da mesma rodada ou com o agente ocupado) entra como continuação, depois do turno atual.
    */
-  function deliver(messages: readonly InboxMessage[]): AckResult[] {
+  async function deliver(messages: readonly InboxMessage[]): Promise<AckResult[]> {
     let idle = idleNow();
-    return messages.map((m): AckResult => {
+    const results: AckResult[] = [];
+    for (const m of messages) results.push(await deliverOne(m));
+    return results;
+
+    async function deliverOne(m: InboxMessage): Promise<AckResult> {
+      if (m.control) return applyControl(m.id, m.control);
       if (!m.text.trim()) return { id: m.id, ok: false, error: 'mensagem vazia' };
       try {
         if (idle) {
@@ -474,7 +501,26 @@ export function create(pi: OmpApi, deps: Deps): void {
       } catch (err) {
         return { id: m.id, ok: false, error: reasonText(err, 'falha ao entregar a mensagem') };
       }
-    });
+    }
+  }
+
+  /** Troca o modelo e/ou o raciocínio da sessão. O arquivo da sessão ganha model_change/thinking_level_change, que o Habblaud já lê. */
+  async function applyControl(id: string, control: NonNullable<InboxMessage['control']>): Promise<AckResult> {
+    try {
+      if (control.model) {
+        const target = mainCtx?.models?.resolve?.(control.model);
+        if (!target) return { id, ok: false, error: 'modelo desconhecido' };
+        if (!pi.setModel) return { id, ok: false, error: 'este omp não troca de modelo pela extensão' };
+        if ((await pi.setModel(target)) === false) return { id, ok: false, error: 'o omp recusou o modelo' };
+      }
+      if (control.thinking) {
+        if (!pi.setThinkingLevel) return { id, ok: false, error: 'este omp não troca o raciocínio pela extensão' };
+        pi.setThinkingLevel(control.thinking);
+      }
+      return { id, ok: true };
+    } catch (err) {
+      return { id, ok: false, error: reasonText(err, 'falha ao aplicar a troca') };
+    }
   }
 
   /** Uma rodada: pergunta, entrega, confirma. Uma por vez (o próximo agendamento só sai no fim). */
@@ -489,7 +535,7 @@ export function create(pi: OmpApi, deps: Deps): void {
         const messages = ok(res) ? parseInbox(res.text) : undefined;
         if (!messages) next = INBOX_OFFLINE_MS;
         else if (messages.length) {
-          const results = deliver(messages);
+          const results = await deliver(messages);
           await request('POST', '/api/mod/inbox/ack', { session, results });
         }
       }

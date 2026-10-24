@@ -677,6 +677,7 @@ esas ventanas (Ollama, Codex gratuito) aparece como "sin uso de 5 h ni semanal".
 - **Enviar mensajes:** el cuadro **Enviar mensaje** funciona para omp con la extensión instalada. Con el agente
   inactivo, el mensaje inicia un turno nuevo; si está trabajando, entra como continuación justo después del turno actual,
   sin interrumpir lo que está haciendo.
+- **Modelo y razonamiento:** con la extensión instalada, los selectores Modelo y Razonamiento del panel cambian la sesión en vivo (`pi.setModel` / `setThinkingLevel`); desde el celular, solo con `messages` en `HABBLAUD_REMOTE_ALLOW`.
 - **Aprobaciones**, de dos maneras:
   - **Predeterminada:** cuando omp pide aprobación en la terminal, el personaje levanta la mano y la oficina muestra qué
     herramienta espera; la decisión sigue en la terminal.

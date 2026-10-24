@@ -47,12 +47,13 @@ function fakeHabblaud(answer: (c: Call) => { status: number; json: unknown } | '
   return { calls, fetchImpl, of: (path: string) => calls.filter((c) => c.path === path) };
 }
 
-function setup(opts: { env?: NodeJS.ProcessEnv; answer?: Parameters<typeof fakeHabblaud>[0]; home: string }) {
+function setup(opts: { pi?: Partial<OmpApi>; env?: NodeJS.ProcessEnv; answer?: Parameters<typeof fakeHabblaud>[0]; home: string }) {
   const handlers = new Map<string, Handler>();
   const sent: Array<{ text: string; options?: unknown }> = [];
   const pi: OmpApi = {
     on: (event, h) => void handlers.set(event, h),
     sendUserMessage: (text, options) => void sent.push({ text, options }),
+    ...opts.pi,
   };
   const habblaud = fakeHabblaud(opts.answer ?? (() => undefined));
   const deps: Deps = { env: opts.env ?? {}, home: opts.home, fetch: habblaud.fetchImpl, now: () => 1_000, shared: {} };
@@ -61,6 +62,7 @@ function setup(opts: { env?: NodeJS.ProcessEnv; answer?: Parameters<typeof fakeH
 }
 
 interface CtxOpts {
+  models?: { provider: string; id: string }[];
   id?: string;
   hasUI?: boolean;
   kind?: 'main' | 'sub';
@@ -74,6 +76,7 @@ function makeCtx(o: CtxOpts = {}): OmpContext & { confirms: number; aborted: boo
     cwd: '/projetos/demo',
     agent: { kind: o.kind ?? 'main' },
     isIdle: () => o.idle ?? true,
+    ...(o.models ? { models: { list: () => o.models!, resolve: (s: string) => o.models!.find((m) => `${m.provider}/${m.id}` === s || m.id === s) } } : {}),
     confirms: 0,
     aborted: false,
     notices: [] as string[],
@@ -216,6 +219,53 @@ describe('omp extension: mensagens', () => {
     const acks = t.habblaud.of('/api/mod/inbox/ack');
     expect(acks).toHaveLength(1);
     expect(acks[0].body).toEqual({ session: 'sess-1', results: [{ id: 'm1', ok: true }, { id: 'm2', ok: true }] });
+  });
+
+  it('session_start leva a lista de modelos do omp (provedor/id)', async () => {
+    const t = setup({ home: tmp.dir });
+    const ctx = makeCtx({ models: [{ provider: 'anthropic', id: 'a' }, { provider: 'openai', id: 'b' }] });
+    t.fire('session_start', ctx);
+    await vi.waitFor(() => expect(t.habblaud.of('/api/omp/events')).toHaveLength(1));
+    await t.fire('session_shutdown', ctx);
+    expect(t.habblaud.of('/api/omp/events')[0].body?.models).toEqual(['anthropic/a', 'openai/b']);
+  });
+
+  it('control: troca o modelo (resolve → setModel) e o raciocínio; desconhecido ou recusado vira falha com motivo', async () => {
+    const setModel = vi.fn(async (m: unknown) => (m as { id: string }).id !== 'recusado');
+    const setThinkingLevel = vi.fn();
+    const t = setup({
+      home: tmp.dir,
+      pi: { setModel, setThinkingLevel },
+      answer: inbox([
+        { id: 'c1', text: '', control: { model: 'openai/b', thinking: 'high' } },
+        { id: 'c2', text: '', control: { model: 'openai/nao-existe' } },
+        { id: 'c3', text: '', control: { model: 'recusado', thinking: 'low' } },
+        { id: 'c4', text: '', control: { thinking: 'off' } },
+      ]),
+    });
+    const ctx = makeCtx({ models: [{ provider: 'anthropic', id: 'a' }, { provider: 'openai', id: 'b' }, { provider: 'openai', id: 'recusado' }] });
+    t.fire('session_start', ctx);
+    await vi.waitFor(() => expect(t.habblaud.of('/api/mod/inbox/ack')).toHaveLength(1));
+    await t.fire('session_shutdown', ctx);
+    expect(setModel.mock.calls.map((c) => (c[0] as { id: string }).id)).toEqual(['b', 'recusado']);
+    expect(setThinkingLevel.mock.calls).toEqual([['high'], ['off']]);
+    expect(t.sent).toEqual([]);
+    expect(t.habblaud.of('/api/mod/inbox/ack')[0].body?.results).toEqual([
+      { id: 'c1', ok: true },
+      { id: 'c2', ok: false, error: 'modelo desconhecido' },
+      { id: 'c3', ok: false, error: 'o omp recusou o modelo' },
+      { id: 'c4', ok: true },
+    ]);
+  });
+
+  it('o batimento repete a lista de modelos', async () => {
+    vi.useFakeTimers();
+    const t = setup({ home: tmp.dir });
+    const ctx = makeCtx({ models: [{ provider: 'anthropic', id: 'a' }] });
+    t.fire('session_start', ctx);
+    await vi.advanceTimersByTimeAsync(10_500);
+    expect(t.habblaud.of('/api/omp/events').find((c) => c.body?.event === 'heartbeat')?.body?.models).toEqual(['anthropic/a']);
+    await t.fire('session_shutdown', ctx);
   });
 
   it('agente ocupado: tudo como continuação, sem interromper', async () => {

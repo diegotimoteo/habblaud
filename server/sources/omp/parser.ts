@@ -188,6 +188,8 @@ export function describeOmpTool(rawName: string, rawInput: unknown): { desc: Act
 export interface OmpState {
   /** `provedor/modelo` do último model_change (ou o `provider`/`model` da última resposta). */
   model?: string;
+  /** `thinkingLevel` do último thinking_level_change. */
+  thinking?: string;
   /** Título: title_change > slot da linha 1 > primeira instrução. */
   title?: string;
   /** O título veio de uma fonte explícita (slot ou title_change): a primeira instrução não o troca. */
@@ -305,6 +307,14 @@ class OmpLineParser {
       case 'model_change': {
         const model = str(this.j.model);
         if (model) this.setModel(model);
+        return;
+      }
+      case 'thinking_level_change': {
+        const thinking = str(this.j.thinkingLevel);
+        if (thinking && thinking !== this.s.thinking) {
+          this.s.thinking = thinking;
+          this.out.changed = true;
+        }
         return;
       }
       case 'title_change': {

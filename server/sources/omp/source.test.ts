@@ -267,6 +267,19 @@ describe('fonte do omp: eventos da extensão', () => {
     expect(c.agent()).toMatchObject({ title: 'Olá', status: 'working', activity: { tool: 'Bash' } });
   });
 
+  it('session_start com models expõe AgentInfo.models', () => {
+    const c = setup();
+    c.event({ event: 'session_start', models: ['anthropic/a', 'openai/b'] });
+    expect(c.agent()!.models).toEqual(['anthropic/a', 'openai/b']);
+  });
+
+  it('heartbeat com models, sem session_start antes (Habblaud reiniciou), expõe AgentInfo.models', () => {
+    const c = setup();
+    c.event({ event: 'heartbeat', sessionFile: c.path(), models: ['anthropic/a'] });
+    c.event({ event: 'session_start', sessionFile: c.path() });
+    expect(c.agent()!.models).toEqual(['anthropic/a']);
+  });
+
   it('agent_start/agent_end mudam o status; tool_start vira atividade imediata; tool_end não muda nada', () => {
     const c = setup();
     c.event({ event: 'session_start' });

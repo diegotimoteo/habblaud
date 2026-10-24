@@ -643,6 +643,7 @@ executável; no Docker fica desligado.
 - **Mandar mensagens:** a caixa **Mandar mensagem** funciona para o omp com a extensão instalada. Com o agente à toa, a
   mensagem começa um turno novo; trabalhando, entra como continuação logo depois do turno atual, sem interromper o que
   ele está fazendo.
+- **Modelo e raciocínio:** com a extensão instalada, os seletores Modelo e Raciocínio da gaveta trocam a sessão ao vivo (`pi.setModel` / `setThinkingLevel`); pelo celular, só com `messages` em `HABBLAUD_REMOTE_ALLOW`.
 - **Aprovações**, de dois jeitos:
   - **Padrão:** quando o omp pede aprovação no terminal, o personagem levanta a mão e o escritório mostra qual
     ferramenta espera; a decisão continua no terminal.

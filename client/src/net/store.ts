@@ -325,6 +325,24 @@ export class OfficeStore {
     return { error: typeof error === 'string' ? error : tr('erro {0}', [res.status]) };
   }
 
+  /**
+   * Troca o modelo e/ou o raciocínio de um agente do omp (POST /api/messages/control): a mensagem de controle (status
+   * `queued`; a extensão aplica e confirma) ou o erro do servidor. Sem conexão: lança. Não existe no ?mock=1.
+   */
+  async controlAgent(agentId: string, change: { model?: string; thinking?: string }): Promise<{ message: OutboxMessage } | { error: string }> {
+    if (this.mock) return { error: tr('indisponível no modo de demonstração') };
+    const res = await fetch('/api/messages/control', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ agentId, ...change }) });
+    let body: unknown;
+    try {
+      body = await res.json();
+    } catch {
+      // Resposta sem JSON (ex.: guard): usa a mensagem padrão.
+    }
+    if (res.status === 201 && body && typeof body === 'object') return { message: body as OutboxMessage };
+    const error = (body as { error?: unknown } | undefined)?.error;
+    return { error: typeof error === 'string' ? error : tr('erro {0}', [res.status]) };
+  }
+
   /** Situação de uma mensagem (GET /api/messages/:id). null = o servidor não a conhece (404). Sem conexão: lança. */
   async messageStatus(id: string): Promise<OutboxMessage | null> {
     if (this.mock) {
