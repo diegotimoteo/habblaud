@@ -267,6 +267,23 @@ describe('fonte do omp: eventos da extensão', () => {
     expect(c.agent()).toMatchObject({ title: 'Olá', status: 'working', activity: { tool: 'Bash' } });
   });
 
+  it('sessão retomada (arquivo termina em session_exit) entra com session_start e fica enquanto bate', () => {
+    const c = setup();
+    const path = c.path();
+    c.session(path, [L.model(c), L.user(c), L.stop(c), L.exit(c)]);
+    c.source.boot();
+    expect(c.agent()).toBeUndefined();
+    c.advance(1_000);
+    c.event({ event: 'session_start', sessionFile: path });
+    expect(c.agent()!.status).toBe('idle');
+    c.advance(OMP_HEARTBEAT_MS);
+    c.event({ event: 'heartbeat' });
+    c.poll();
+    expect(c.agent()!.status).toBe('idle');
+    c.event({ event: 'session_shutdown' });
+    expect(c.agent()!.status).toBe('offline');
+  });
+
   it('agent_start/agent_end mudam o status; tool_start vira atividade imediata; tool_end não muda nada', () => {
     const c = setup();
     c.event({ event: 'session_start' });

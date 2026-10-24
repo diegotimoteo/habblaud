@@ -464,7 +464,9 @@ export class OmpSource implements AgentSource, OmpLive {
       return t.inOffice || t.status === 'working' || t.status === 'waiting';
     }
     if (!this.cwdOf(t)) return false;
-    if (t.state.exited) return false;
+    // Batimento recente vence o session_exit do fim do arquivo: `omp --resume/--restore` reabre a sessão sem escrever
+    // nada até a próxima mensagem, e o último registro ainda é o session_exit do processo anterior.
+    if (t.state.exited && !(t.extSeen && this.beatRecent(t, now))) return false;
     if (t.closedAt !== undefined) {
       // Fechada por shutdown/batimento perdido: só uma escrita nova (e viva) no arquivo a reabre; eventos reabrem em applyEvent.
       if (t.fileLive && (t.lastWriteAt ?? 0) > t.closedAt + REOPEN_GAP_MS) delete t.closedAt;
