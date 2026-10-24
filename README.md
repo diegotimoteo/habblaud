@@ -645,6 +645,7 @@ executable; in Docker it's always off.
 - **Sending messages:** the **Send message** box works for omp with the extension installed. With the agent idle, the
   message starts a new turn; while it's working, it goes in as a follow-up right after the current turn, without interrupting
   what it's doing.
+- **Model and reasoning:** with the extension installed, the drawer's Model and Reasoning selectors change the live session (`pi.setModel` / `setThinkingLevel`); from the phone, only with `messages` in `HABBLAUD_REMOTE_ALLOW`.
 - **Approvals**, in two ways:
   - **Default:** when omp asks for approval in the terminal, the character raises a hand and the office shows which
     tool is waiting; the decision stays in the terminal.
@@ -658,6 +659,10 @@ executable; in Docker it's always off.
   HABBLAUD_OMP_PERMISSOES=1 omp --approval-mode yolo          # bash/zsh
   $env:HABBLAUD_OMP_PERMISSOES=1; omp --approval-mode yolo    # PowerShell
   ```
+- **Room by project:** with omp running in a folder that holds several projects and is not a git repository (e.g.
+  `~/Development`), **Settings › omp room follows the project** moves the character to the room of the subfolder its
+  tools are working in (the most cited among the last 5 tool calls). Off by default; the choice is stored in
+  `omp.json`, in the data folder. Only from this computer.
 - `npm run omp:uninstall` removes the extension; `HABBLAUD_OMP=0` turns omp off in the office. If omp has
   `extensionHandlers.toolCallTimeoutMs` different from 30 s and is headless: give the same value in
   `HABBLAUD_OMP_TIMEOUT_MS` in omp's environment.

@@ -677,6 +677,7 @@ esas ventanas (Ollama, Codex gratuito) aparece como "sin uso de 5 h ni semanal".
 - **Enviar mensajes:** el cuadro **Enviar mensaje** funciona para omp con la extensión instalada. Con el agente
   inactivo, el mensaje inicia un turno nuevo; si está trabajando, entra como continuación justo después del turno actual,
   sin interrumpir lo que está haciendo.
+- **Modelo y razonamiento:** con la extensión instalada, los selectores Modelo y Razonamiento del panel cambian la sesión en vivo (`pi.setModel` / `setThinkingLevel`); desde el celular, solo con `messages` en `HABBLAUD_REMOTE_ALLOW`.
 - **Aprobaciones**, de dos maneras:
   - **Predeterminada:** cuando omp pide aprobación en la terminal, el personaje levanta la mano y la oficina muestra qué
     herramienta espera; la decisión sigue en la terminal.
@@ -690,6 +691,10 @@ esas ventanas (Ollama, Codex gratuito) aparece como "sin uso de 5 h ni semanal".
   HABBLAUD_OMP_PERMISSOES=1 omp --approval-mode yolo          # bash/zsh
   $env:HABBLAUD_OMP_PERMISSOES=1; omp --approval-mode yolo    # PowerShell
   ```
+- **Sala por proyecto:** con omp en una carpeta que reúne varios proyectos y no es un repositorio git (p. ej.,
+  `~/Desarrollo`), **Configuración › La sala de omp sigue el proyecto** lleva al personaje a la sala de la subcarpeta en
+  la que trabajan sus herramientas (la más citada en las últimas 5 llamadas). Desactivado por defecto; la elección queda
+  en `omp.json`, en la carpeta de datos. Solo desde la propia computadora.
 - `npm run omp:uninstall` quita la extensión; `HABBLAUD_OMP=0` desactiva omp en la oficina. Si omp tiene
   `extensionHandlers.toolCallTimeoutMs` distinto de 30 s y está sin pantalla: indica el mismo valor en
   `HABBLAUD_OMP_TIMEOUT_MS` en el entorno de omp.
