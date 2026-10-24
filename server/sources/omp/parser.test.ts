@@ -197,6 +197,7 @@ describe('projectDir (sala segue o projeto)', () => {
   it('sem caminhos, fora do cwd ou arquivo solto na raiz: fica no cwd', () => {
     expect(projectDir(root, [])).toBe(root);
     expect(projectDir(root, [f('/etc/hosts'), f('README.md'), f('../x/y.ts'), f('/home/u/devx/a/b')])).toBe(root);
+    expect(projectDir(root, [f('https://github.com/a/b'), f('skill://x/SKILL.md'), d('local://plan.md')])).toBe(root);
   });
 
   it('subdiretório mais citado vence; empate vai para o mais recente', () => {
