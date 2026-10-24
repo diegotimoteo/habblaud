@@ -382,6 +382,8 @@ export interface OfficeSnapshot {
      * e à linha do tempo). Ausente nos testes e no timelapse.
      */
     world?: WorldMeta;
+    /** Configurações › Sala do omp segue o projeto (OmpSettings). Ausente = sem omp. */
+    ompRoomByProject?: boolean;
   };
 }
 

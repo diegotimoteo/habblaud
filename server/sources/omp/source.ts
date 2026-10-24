@@ -76,6 +76,8 @@ export interface OmpSourceOptions {
   watch?: boolean;
   /** Uso do plano por `omp usage --json` (config.ompUsage): desligado = nunca roda o omp. */
   usage?: boolean;
+  /** Sala segue o projeto quando o cwd não é repositório git (OmpSettings, Configurações); lida a cada ciclo. Ausente = sala do cwd. */
+  roomByProject?: () => boolean;
   /** Injeção para testes: substitui runOmpUsage. */
   runUsage?: RunOmpUsage;
   /** Injeção para testes: caminho do omp (padrão ompBinFrom). */
@@ -447,12 +449,12 @@ export class OmpSource implements AgentSource, OmpLive {
   // ---------------------------------------------------------------- presença
 
   /**
-   * Sala do agente: o cwd da sessão; se o cwd não é um repositório git (pasta que junta vários projetos), a pasta do
-   * projeto em que as últimas ferramentas trabalharam (projectDir).
+   * Sala do agente: o cwd da sessão; com `roomByProject` ligado e o cwd fora de um repositório git (pasta que junta
+   * vários projetos), a pasta do projeto em que as últimas ferramentas trabalharam (projectDir).
    */
   private cwdOf(t: Tracker): string | undefined {
     const cwd = t.head?.header?.cwd ?? t.eventCwd;
-    if (!cwd || t.kind !== 'main' || existsSync(join(cwd, '.git'))) return cwd;
+    if (!cwd || t.kind !== 'main' || !this.opts.roomByProject?.() || existsSync(join(cwd, '.git'))) return cwd;
     return projectDir(cwd, t.state.paths);
   }
 

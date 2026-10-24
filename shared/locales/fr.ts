@@ -3381,4 +3381,11 @@ export const FR: Readonly<Record<string, string>> = {
   "Carimbo deixado na portaria: {0}": "Tampon laissé à l'accueil : {0}",
   "Entre no prédio ou chegue mais perto da porta para carimbar.": "Entrez dans l'immeuble ou approchez-vous de la porte pour tamponner.",
   "O carimbo não foi deixado. Tente de novo.": "Le tampon n'a pas été laissé. Réessayez.",
+  "omp.json ilegível ({0}); sala por projeto desligada.": "omp.json illisible ({0}) ; salle par projet désactivée.",
+  "esperado {roomByProject: boolean}": "attendu {roomByProject: boolean}",
+  "Sala do omp segue o projeto": "La salle d'omp suit le projet",
+  "Com o omp numa pasta que junta vários projetos (sem git), o personagem vai para a sala da subpasta em que está trabalhando.": "Avec omp dans un dossier qui regroupe plusieurs projets (sans git), le personnage va dans la salle du sous-dossier où il travaille.",
+  "Sala do omp por projeto ligada.": "Salle d'omp par projet activée.",
+  "Sala do omp por projeto desligada.": "Salle d'omp par projet désactivée.",
+  "Não foi possível mudar a sala do omp.": "Impossible de changer la salle d'omp.",
 };

@@ -656,6 +656,10 @@ executável; no Docker fica desligado.
   HABBLAUD_OMP_PERMISSOES=1 omp --approval-mode yolo          # bash/zsh
   $env:HABBLAUD_OMP_PERMISSOES=1; omp --approval-mode yolo    # PowerShell
   ```
+- **Sala por projeto:** com o omp numa pasta que junta vários projetos e não é repositório git (ex.:
+  `~/Desenvolvimento`), **Configurações › Sala do omp segue o projeto** leva o personagem para a sala da subpasta em que
+  as ferramentas dele estão trabalhando (a mais citada nas últimas 5 chamadas). Desligado por padrão; a escolha fica em
+  `omp.json`, na pasta de dados. Só pelo próprio computador.
 - `npm run omp:uninstall` tira a extensão; `HABBLAUD_OMP=0` desliga o omp no escritório. O omp com
   `extensionHandlers.toolCallTimeoutMs` diferente de 30 s e sem tela: informe o mesmo valor em
   `HABBLAUD_OMP_TIMEOUT_MS` no ambiente do omp.

@@ -80,6 +80,8 @@ export interface OfficeDeps {
   ptys?: () => { status: PtyStatus; list: PtyInfo[] };
   /** Habblaud World (WorldService.meta; ver OfficeSnapshot.meta.world). */
   world?: () => WorldMeta;
+  /** Opção "sala do omp segue o projeto" (OfficeSnapshot.meta.ompRoomByProject); ausente = sem omp. */
+  ompRoomByProject?: () => boolean;
   now?: () => number;
 }
 
@@ -1015,6 +1017,7 @@ export class Office {
         ...(ptys ? { pty: ptys.status } : {}),
         updates: this.deps.updates?.(),
         ...(this.deps.world ? { world: this.deps.world() } : {}),
+        ...(this.deps.ompRoomByProject ? { ompRoomByProject: this.deps.ompRoomByProject() } : {}),
       },
     };
   }

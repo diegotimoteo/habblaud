@@ -658,6 +658,10 @@ executable; in Docker it's always off.
   HABBLAUD_OMP_PERMISSOES=1 omp --approval-mode yolo          # bash/zsh
   $env:HABBLAUD_OMP_PERMISSOES=1; omp --approval-mode yolo    # PowerShell
   ```
+- **Room by project:** with omp running in a folder that holds several projects and is not a git repository (e.g.
+  `~/Development`), **Settings › omp room follows the project** moves the character to the room of the subfolder its
+  tools are working in (the most cited among the last 5 tool calls). Off by default; the choice is stored in
+  `omp.json`, in the data folder. Only from this computer.
 - `npm run omp:uninstall` removes the extension; `HABBLAUD_OMP=0` turns omp off in the office. If omp has
   `extensionHandlers.toolCallTimeoutMs` different from 30 s and is headless: give the same value in
   `HABBLAUD_OMP_TIMEOUT_MS` in omp's environment.

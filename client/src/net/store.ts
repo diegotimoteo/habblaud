@@ -186,6 +186,17 @@ export class OfficeStore {
     return res.ok;
   }
 
+  /** Configurações › Sala do omp segue o projeto (POST /api/omp/settings); o novo valor chega no snapshot. */
+  async setOmpRoomByProject(enabled: boolean): Promise<boolean> {
+    if (this.mock) return false;
+    const res = await fetch('/api/omp/settings', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ roomByProject: enabled }),
+    });
+    return res.ok;
+  }
+
   /** "Verificar agora": pede ao servidor uma consulta ao GitHub (o resultado chega no snapshot). */
   async checkUpdates(): Promise<boolean> {
     if (this.mock) return false;

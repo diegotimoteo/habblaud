@@ -690,6 +690,10 @@ fournisseur sans ces fenêtres (Ollama, Codex gratuit) apparaît comme « pas d'
   HABBLAUD_OMP_PERMISSOES=1 omp --approval-mode yolo          # bash/zsh
   $env:HABBLAUD_OMP_PERMISSOES=1; omp --approval-mode yolo    # PowerShell
   ```
+- **Salle par projet :** avec omp dans un dossier qui regroupe plusieurs projets et n'est pas un dépôt git (ex. :
+  `~/Developpement`), **Réglages › La salle d'omp suit le projet** emmène le personnage dans la salle du sous-dossier où
+  travaillent ses outils (le plus cité dans les 5 derniers appels). Désactivé par défaut ; le choix est enregistré dans
+  `omp.json`, dans le dossier de données. Depuis l'ordinateur lui-même uniquement.
 - `npm run omp:uninstall` retire l'extension ; `HABBLAUD_OMP=0` désactive omp dans le bureau. Si omp a
   `extensionHandlers.toolCallTimeoutMs` différent de 30 s et tourne sans écran : indiquez la même valeur dans
   `HABBLAUD_OMP_TIMEOUT_MS` dans l'environnement d'omp.

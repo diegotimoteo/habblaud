@@ -233,7 +233,7 @@ describe('fonte do omp: presença pelo arquivo', () => {
   });
 
   it('sessão de uma fixture real em andamento: cwd sem .git, sala do projeto que as ferramentas tocam, com o título do title_change', () => {
-    const c = setup();
+    const c = setup({ source: { roomByProject: () => true } });
     const id = '01a13a52-fa11-7000-b7af-bfa3171c863d';
     const path = c.path(id);
     copyFileSync(join(FIX, 'main-task.jsonl'), path);
@@ -243,6 +243,23 @@ describe('fonte do omp: presença pelo arquivo', () => {
     expect(a).toMatchObject({ provider: 'omp', sessionId: id, roomId: normalizeCwd('C:\\Users\\dev\\proj\\src'), title: 'Título da sessão', status: 'working' });
     expect(a.model).toBe('claude-fable-5-1');
     expect(a.stats.tokensIn).toBeGreaterThan(0);
+  });
+
+  it('sala por projeto desligada (padrão) fica no cwd; ligar em Configurações muda a sala no próximo ciclo, sem reiniciar', () => {
+    let on = false;
+    const c = setup({ source: { roomByProject: () => on } });
+    const id = '01a13a52-fa11-7000-b7af-bfa3171c863d';
+    const path = c.path(id);
+    copyFileSync(join(FIX, 'main-task.jsonl'), path);
+    utimesSync(path, new Date(c.now()), new Date(c.now()));
+    c.source.boot();
+    expect(c.agent(`omp:${id}`)!.roomId).toBe(normalizeCwd('C:\\Users\\dev\\proj'));
+    on = true;
+    c.poll();
+    expect(c.agent(`omp:${id}`)!.roomId).toBe(normalizeCwd('C:\\Users\\dev\\proj\\src'));
+    on = false;
+    c.poll();
+    expect(c.agent(`omp:${id}`)!.roomId).toBe(normalizeCwd('C:\\Users\\dev\\proj'));
   });
 
   it('duas agent dirs: uma conta por pasta, a sessão leva a conta da sua pasta; HABBLAUD_OMP sem pastas = sem fonte', () => {
