@@ -238,6 +238,8 @@ export function projectDir(cwd: string, paths: readonly { path: string; dir: boo
   const count = new Map<string, number>();
   let best: string | undefined;
   for (const p of paths) {
+    // URL e URIs internas do omp (https://, skill://, local://...) não são pasta
+    if (/^[A-Za-z][\w+.-]*:\/\//.test(p.path)) continue;
     const raw = p.path.replace(/\\/g, '/');
     const abs = raw.startsWith('/') || raw.startsWith('~') || /^[A-Za-z]:/.test(raw) ? raw : `${root}/${raw}`;
     if (!abs.startsWith(`${root}/`)) continue;
