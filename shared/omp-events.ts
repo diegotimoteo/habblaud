@@ -20,6 +20,8 @@ export type OmpEventKind = (typeof OMP_EVENT_KINDS)[number];
 export const OMP_HEARTBEAT_MS = 10_000;
 /** Sem batimento por este tempo, a sessão que tinha extensão é dada como encerrada (crash, kill). */
 export const OMP_HEARTBEAT_LOST_MS = 30_000;
+/** Id de sessão do omp (uuid do cabeçalho e do nome do arquivo). */
+export const OMP_SESSION_ID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 export interface OmpEvent {
   event: OmpEventKind;
@@ -34,10 +36,13 @@ export interface OmpEvent {
   toolCallId?: string;
   /** approval_resolved: aprovado ou não. */
   approved?: boolean;
+  /** session_start e heartbeat: modelos autenticados do omp (`provedor/id`), para o seletor da gaveta. */
+  models?: string[];
 }
 
 const ID_MAX = 200;
 const PATH_MAX = 4_096;
+const MODELS_MAX = 200;
 
 type Rec = Record<string, unknown>;
 
@@ -64,5 +69,9 @@ export function parseOmpEvent(raw: unknown): OmpEvent | undefined {
   if (toolName) out.toolName = toolName;
   if (toolCallId) out.toolCallId = toolCallId;
   if (typeof r.approved === 'boolean') out.approved = r.approved;
+  if ((r.event === 'session_start' || r.event === 'heartbeat') && Array.isArray(r.models)) {
+    const models = r.models.slice(0, MODELS_MAX).flatMap((m) => str(m, ID_MAX) ?? []);
+    if (models.length) out.models = models;
+  }
   return out;
 }
