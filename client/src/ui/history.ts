@@ -59,6 +59,54 @@ export function parseRecentSessions(raw: unknown): RecentSession[] {
   return out.sort((a, b) => b.lastAt - a.lastAt);
 }
 
+export const FAVORITES_KEY = 'habblaud.history.favorites';
+export const MAX_FAVORITES = 100;
+
+export function sessionKey(s: Pick<RecentSession, 'account' | 'sessionId'>): string {
+  return `${s.account}:${s.sessionId}`;
+}
+
+/** Retratos válidos do JSON salvo (reusa parseRecentSessions({ sessions: raw })), sem duplicados. */
+export function parseFavorites(raw: unknown): RecentSession[] {
+  const seen = new Set<string>();
+  return parseRecentSessions({ sessions: raw }).filter((s) => {
+    const k = sessionKey(s);
+    if (seen.has(k)) return false;
+    seen.add(k);
+    return true;
+  });
+}
+
+/** Retrato de uma favorita que o servidor já não lista: encerrada e sem agente. */
+function snapshotOf(s: RecentSession): RecentSession {
+  const { agentId: _agentId, ...rest } = s;
+  return { ...rest, open: false };
+}
+
+function capFavorites(list: RecentSession[]): RecentSession[] {
+  return list.length > MAX_FAVORITES ? [...list].sort((a, b) => b.lastAt - a.lastAt).slice(0, MAX_FAVORITES) : list;
+}
+
+/**
+ * Junta favoritas com a lista do servidor. favorites: versão do servidor quando existe, senão o retrato com open=false
+ * e sem agentId; lastAt decrescente. rest: sessões do servidor que não são favoritas. updated: retratos para salvar.
+ */
+export function splitFavorites(saved: readonly RecentSession[], sessions: readonly RecentSession[]): { favorites: RecentSession[]; rest: RecentSession[]; updated: RecentSession[] } {
+  const server = new Map(sessions.map((s) => [sessionKey(s), s]));
+  const favKeys = new Set(saved.map(sessionKey));
+  const favorites = saved.map((f) => server.get(sessionKey(f)) ?? snapshotOf(f)).sort((a, b) => b.lastAt - a.lastAt);
+  const rest = sessions.filter((s) => !favKeys.has(sessionKey(s)));
+  const updated = capFavorites(saved.map((f) => { const live = server.get(sessionKey(f)); return live ? snapshotOf(live) : f; }));
+  return { favorites, rest, updated };
+}
+
+/** Liga/desliga: devolve a nova lista salva (adiciona o retrato encerrado; corta em MAX_FAVORITES pelos lastAt mais antigos). */
+export function toggleFavorite(saved: readonly RecentSession[], s: RecentSession): RecentSession[] {
+  const k = sessionKey(s);
+  if (saved.some((f) => sessionKey(f) === k)) return saved.filter((f) => sessionKey(f) !== k);
+  return capFavorites([...saved, snapshotOf(s)]);
+}
+
 /**
  * Busca no histórico: título, projeto (nome ou caminho), nome/letra da conta e a ferramenta ("codex"), sem diferenciar
  * maiúsculas nem acentos.
@@ -126,6 +174,8 @@ export class HistoryPopover implements UiComponent {
   private retryBtn: HTMLButtonElement;
   private footEl: HTMLElement;
   private sessions: RecentSession[] = [];
+  /** Favoritas salvas no navegador (retratos). */
+  private favorites: RecentSession[] = [];
   private state: LoadState = 'idle';
   private error = '';
   private query = '';
@@ -138,6 +188,7 @@ export class HistoryPopover implements UiComponent {
     private ctx: UiContext,
     private terminal: Pick<TerminalControl, 'openSession'>,
   ) {
+    this.favorites = this.loadFavorites();
     this.button = iconButton(ICONS.clock, tr('Histórico de sessões'), () => this.toggle(), 'ui-hist-btn');
     setAttr(this.button, 'aria-haspopup', 'dialog');
     setAttr(this.button, 'aria-expanded', 'false');
@@ -277,40 +328,83 @@ export class HistoryPopover implements UiComponent {
 
   private renderList(): void {
     const now = this.ctx.now();
-    const shown = filterSessions(this.sessions, this.query, (id) => this.accountLabel(id));
-    const days = groupSessionsByDay(shown, now);
+    const split = splitFavorites(this.favorites, this.sessions);
+    if (this.state === 'ready' && JSON.stringify(split.updated) !== JSON.stringify(this.favorites)) {
+      this.favorites = split.updated;
+      this.saveFavorites();
+    }
+    const accountLabel = (id: string) => this.accountLabel(id);
+    const shownFavs = filterSessions(split.favorites, this.query, accountLabel);
+    const shownRest = filterSessions(split.rest, this.query, accountLabel);
+    const total = split.favorites.length + split.rest.length;
+    const shownCount = shownFavs.length + shownRest.length;
+    const days = groupSessionsByDay(shownRest, now);
     const q = this.query.trim();
     const loading = this.state === 'loading' || this.state === 'idle';
     let stateText = '';
     if (this.state === 'error') stateText = this.error || tr('Não foi possível carregar o histórico.');
     else if (loading) stateText = tr('Carregando as sessões…');
-    else if (!this.sessions.length) stateText = tr('Nenhuma sessão nos últimos 7 dias.');
-    else if (!shown.length) stateText = tr('Nenhuma sessão encontrada para “{0}”.', [q]);
+    else if (!total) stateText = tr('Nenhuma sessão nos últimos 7 dias.');
+    else if (!shownCount) stateText = tr('Nenhuma sessão encontrada para “{0}”.', [q]);
     setText(this.stateText, stateText);
     setHidden(this.stateEl, !stateText);
     setHidden(this.retryBtn, this.state !== 'error');
-    setText(
-      this.footEl,
-      this.sessions.length ? (q ? `${shown.length} de ${plural(this.sessions.length, tr('sessão'), tr('sessões'))}` : plural(this.sessions.length, tr('sessão'), tr('sessões'))) : '',
-    );
-    setHidden(this.footEl, !this.sessions.length);
+    setText(this.footEl, total ? (q ? `${shownCount} de ${plural(total, tr('sessão'), tr('sessões'))}` : plural(total, tr('sessão'), tr('sessões'))) : '');
+    setHidden(this.footEl, !total);
 
     // Refaz o DOM só quando o conteúdo muda (a lista é pequena: no máximo ~150 sessões).
-    const sig = JSON.stringify([days.map((d) => [d.key, d.label]), shown.map((s) => [s.account, s.sessionId, s.title, s.lastAt, s.open, s.agentId && !!this.ctx.agent(s.agentId)])]);
+    const sig = JSON.stringify([this.favorites.map(sessionKey), days.map((d) => [d.key, d.label]), [...shownFavs, ...shownRest].map((s) => [s.account, s.sessionId, s.title, s.lastAt, s.open, s.agentId && !!this.ctx.agent(s.agentId)])]);
     if (sig === this.drawn) return;
     const focusedKey = (document.activeElement as HTMLElement | null)?.dataset?.session;
     this.drawn = sig;
     const frag = document.createDocumentFragment();
+    if (shownFavs.length) {
+      const group = h('section', { class: 'ui-hist__day ui-hist__favs', attrs: { 'aria-label': tr('Favoritas') } }, h('h3', { class: 'ui-hist__day-label', text: tr('Favoritas') }));
+      for (const s of shownFavs) group.append(this.row(s, now, true));
+      frag.append(group);
+    }
     for (const day of days) {
       const group = h('section', { class: 'ui-hist__day', attrs: { 'aria-label': day.label } }, h('h3', { class: 'ui-hist__day-label', text: day.label }));
-      for (const s of day.sessions) group.append(this.item(s, now));
+      for (const s of day.sessions) group.append(this.row(s, now));
       frag.append(group);
     }
     this.listEl.replaceChildren(frag);
     if (focusedKey) this.items().find((b) => b.dataset.session === focusedKey)?.focus();
   }
 
-  private item(s: RecentSession, now: number): HTMLButtonElement {
+  /** A linha da sessão: o item e a estrela de favoritar. */
+  private row(s: RecentSession, now: number, fav = false): HTMLElement {
+    const btn = this.item(s, now, fav);
+    const key = sessionKey(s);
+    const pinned = this.favorites.some((f) => sessionKey(f) === key);
+    const star = iconButton(pinned ? ICONS.starFilled : ICONS.star, pinned ? tr('Tirar dos favoritos') : tr('Favoritar sessão'), () => {
+      this.favorites = toggleFavorite(this.favorites, s);
+      this.saveFavorites();
+      this.renderList();
+      this.listEl.querySelector<HTMLElement>(`.ui-hist__fav[data-fav="${CSS.escape(key)}"]`)?.focus();
+    }, `ui-hist__fav${pinned ? ' is-on' : ''}`);
+    star.dataset.fav = key;
+    setAttr(star, 'aria-pressed', String(pinned));
+    return h('div', { class: 'ui-hist__row' }, btn, star);
+  }
+
+  private loadFavorites(): RecentSession[] {
+    try {
+      return parseFavorites(JSON.parse(localStorage.getItem(FAVORITES_KEY) ?? '[]'));
+    } catch {
+      return [];
+    }
+  }
+
+  private saveFavorites(): void {
+    try {
+      localStorage.setItem(FAVORITES_KEY, JSON.stringify(this.favorites));
+    } catch {
+      // sem armazenamento: as favoritas valem só até recarregar
+    }
+  }
+
+  private item(s: RecentSession, now: number, fav = false): HTMLButtonElement {
     const account = this.ctx.account(s.account);
     const chip = createAccountChip('sm');
     updateAccountChip(chip, account, s.account, s.provider);
@@ -323,7 +417,7 @@ export class HistoryPopover implements UiComponent {
       { class: 'ui-hist__meta' },
       tool ? h('span', { class: 'ui-prov ui-prov--xs', text: tool }) : null,
       h('span', { class: 'ui-hist__project', text: project }),
-      h('span', { class: 'ui-hist__time', text: formatClock(s.lastAt, false) }),
+      h('span', { class: 'ui-hist__time', text: fav && calendarDayDiff(s.lastAt, now) !== 0 ? `${dayLabel(s.lastAt, now)}, ${formatClock(s.lastAt, false)}` : formatClock(s.lastAt, false) }),
     );
     if (live) meta.append(h('span', { class: 'ui-hist__live', text: tr('aberta') }));
     const btn = h('button', { class: `ui-hist__item${live ? ' is-live' : ''}`, type: 'button' }, chip, h('span', { class: 'ui-hist__text' }, h('span', { class: 'ui-hist__title', text: title }), meta));
