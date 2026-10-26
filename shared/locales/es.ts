@@ -3389,4 +3389,8 @@ export const ES: Readonly<Record<string, string>> = {
   "Lido do \"omp usage\" {0}; atualiza a cada 5 min com uma sessão do omp aberta.": "Leído de \"omp usage\" {0}; se actualiza cada 5 min con una sesión de omp abierta.",
   "Ver todos os provedores do omp ({0}) e os limites de cada um": "Ver todos los proveedores de omp ({0}) y los límites de cada uno",
   "Provedores do omp: {0}": "Proveedores de omp: {0}",
+  // client/src/ui/history.ts (favoritas)
+  "Favoritas": "Favoritas",
+  "Favoritar sessão": "Marcar sesión como favorita",
+  "Tirar dos favoritos": "Quitar de favoritos",
 };

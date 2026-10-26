@@ -12,6 +12,9 @@ do meio (0.**3**.0).
 
 ### Adicionado
 
+- **Sessões favoritas no Histórico:** cada sessão do Histórico ganha uma estrela. A favorita vai para a seção
+  "Favoritas", no topo, e continua lá depois dos 7 dias (abre a conversa normalmente). Ficam guardadas no navegador
+  (até 100), sem sincronizar entre aparelhos.
 - **Histórico de sessões e Entregas com o omp:** as conversas do omp dos últimos 7 dias (abertas ou encerradas) entram
   no histórico de sessões, com título e projeto, e abrem no terminal; as Entregas passam a mostrar o que os agentes
   do omp terminaram. Antes os dois painéis ficavam vazios com o omp.
