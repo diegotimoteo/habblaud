@@ -2488,6 +2488,45 @@
   margin: 0 -6px;
 }
 
+/* Linha do agente na sala com a estrela de favoritar ao lado (a linha é um botão: a estrela não cabe dentro). */
+.ui-agent-slot {
+  display: flex;
+  align-items: center;
+}
+
+.ui-agent-slot > .ui-agent {
+  flex: 1;
+  width: auto;
+  min-width: 0;
+}
+
+/* Estrela de favorita: discreta até passar o mouse/foco; marcada fica sempre visível, em destaque. */
+.ui-agent-slot__star {
+  flex: none;
+  opacity: 0;
+  transition: opacity 0.12s;
+}
+
+.ui-agent-slot:hover .ui-agent-slot__star,
+.ui-agent-slot__star:focus-visible,
+.ui-fav-star.is-on {
+  opacity: 1;
+}
+
+.ui-fav-star.is-on {
+  color: var(--ui-accent);
+}
+
+@media (hover: none) {
+  .ui-agent-slot__star {
+    opacity: 0.55;
+  }
+
+  .ui-agent-slot__star.is-on {
+    opacity: 1;
+  }
+}
+
 .ui-timeline {
   display: flex;
   flex-direction: column;

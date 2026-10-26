@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import type { RecentSession } from '../../../shared/types';
-import { dayLabel, filterSessions, formatSize, groupSessionsByDay, MAX_FAVORITES, parseFavorites, parseRecentSessions, sessionKey, splitFavorites, toggleFavorite } from './history';
+import { dayLabel, filterSessions, formatSize, groupSessionsByDay } from './history';
+import { parseRecentSessions } from './recent-sessions';
 
 const NOW = new Date(2026, 9, 8, 15, 0, 0).getTime();
 const at = (day: number, hour: number, min = 0) => new Date(2026, 9, day, hour, min).getTime();
@@ -100,46 +101,5 @@ describe('utilitários', () => {
     expect(formatSize(10)).toBe('1 KB');
     expect(formatSize(820 * 1024)).toBe('820 KB');
     expect(formatSize(3.4 * 1024 * 1024)).toBe('3,4 MB');
-  });
-});
-
-describe('favoritas', () => {
-  it('parseFavorites ignora lixo e duplicados', () => {
-    const a = session({ sessionId: 'a', lastAt: 1 });
-    expect(parseFavorites(null)).toEqual([]);
-    expect(parseFavorites('x')).toEqual([]);
-    expect(parseFavorites([null, 'x', { account: '.claude', lastAt: 1 }, a, a]).map(sessionKey)).toEqual(['.claude:a']);
-  });
-
-  it('splitFavorites: versão do servidor vence, retrato antigo fica encerrado, favoritas saem de rest', () => {
-    const savedA = session({ sessionId: 'a', lastAt: 1, title: 'velho' });
-    const savedOld = session({ sessionId: 'old', lastAt: 5, title: 'antiga' });
-    const serverA = session({ sessionId: 'a', lastAt: 9, title: 'novo', open: true, agentId: 'ag' });
-    const other = session({ sessionId: 'b', lastAt: 3 });
-    const { favorites, rest, updated } = splitFavorites([savedA, savedOld], [other, serverA]);
-    expect(favorites.map((s) => [s.sessionId, s.title, s.open, s.agentId])).toEqual([
-      ['a', 'novo', true, 'ag'],
-      ['old', 'antiga', false, undefined],
-    ]);
-    expect(rest.map((s) => s.sessionId)).toEqual(['b']);
-    expect(updated.map((s) => [s.sessionId, s.title, s.open, s.agentId, s.lastAt])).toEqual([
-      ['a', 'novo', false, undefined, 9],
-      ['old', 'antiga', false, undefined, 5],
-    ]);
-  });
-
-  it('toggleFavorite adiciona, remove e respeita MAX_FAVORITES', () => {
-    const s = session({ sessionId: 'a', lastAt: 1, open: true, agentId: 'ag' });
-    const added = toggleFavorite([], s);
-    expect(added).toHaveLength(1);
-    expect(added[0]).toMatchObject({ sessionId: 'a', open: false });
-    expect(added[0]?.agentId).toBeUndefined();
-    expect(toggleFavorite(added, s)).toEqual([]);
-
-    const many = Array.from({ length: MAX_FAVORITES }, (_, i) => session({ sessionId: `s${i}`, lastAt: 100 + i }));
-    const capped = toggleFavorite(many, session({ sessionId: 'novo', lastAt: 1000 }));
-    expect(capped).toHaveLength(MAX_FAVORITES);
-    expect(capped.some((x) => x.sessionId === 'novo')).toBe(true);
-    expect(capped.some((x) => x.sessionId === 's0')).toBe(false);
   });
 });

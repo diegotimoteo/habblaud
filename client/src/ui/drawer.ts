@@ -1,6 +1,6 @@
 // Gaveta de detalhes (direita): agente ou sala selecionados. Agente do Codex: selo "Codex", textos dele (onde
 // responder, o terminal, a aprovação no lugar do modo de permissão, sem custo) e a dica dos hooks do Codex.
-import type { Activity, AgentInfo, FeedItem, RoomInfo, ShellJob, TaskItem } from '../../../shared/types';
+import type { Activity, AgentInfo, FeedItem, RecentSession, RoomInfo, ShellJob, TaskItem } from '../../../shared/types';
 import { roomTheme } from '../art';
 import { createAvatarPlaceholder, updateAvatar } from './avatar';
 import { CharacterEditor } from './character-editor';
@@ -46,6 +46,7 @@ import { PermissionCard } from './permission';
 import { canRenameRoom } from './roomrename';
 import { accountChipLabel, accountProvider, CODEX_LIVE_HINT, codexApprovalLabel, PROVIDER_NAME, providerOf } from './provider';
 import { ptyControllable } from './ptyapi';
+import { agentSession, favorites, sessionKey } from './favorites';
 import { createAgentRow, updateAgentRow } from './rows';
 import { SocialSection } from './social';
 import { TERMINAL_UNAVAILABLE_HINT, type TerminalControl } from './terminal';
@@ -90,6 +91,45 @@ function copyButton(getText: () => string, label: string): HTMLButtonElement {
     }, 1400);
   }, 'ui-icon-btn--sm');
   return b;
+}
+
+/** Retrato da sessão do agente para a estrela (null: subagente ou demo, sem estrela). */
+function favoriteSessionOf(ctx: UiContext, a: AgentInfo): RecentSession | null {
+  const snap = ctx.store.snapshot;
+  return agentSession(a, ctx.store.room(a.roomId), ctx.store.mock || !!snap?.meta.demo);
+}
+
+/** A sessão que a estrela liga/desliga agora (a estrela vive em linhas reaproveitadas). */
+const starTarget = new WeakMap<HTMLElement, RecentSession>();
+
+/** Estrela de favoritar a sessão do agente: a mesma lista "Favoritas" do Histórico. Não seleciona a linha em que está. */
+function createFavStar(extraClass = ''): HTMLButtonElement {
+  const b = iconButton(ICONS.star, tr('Favoritar sessão'), (ev) => {
+    ev.stopPropagation();
+    const s = starTarget.get(b);
+    if (s) favorites.toggle(s);
+  }, `ui-fav-star ${extraClass}`.trim());
+  setHidden(b, true);
+  return b;
+}
+
+function updateFavStar(b: HTMLButtonElement, s: RecentSession | null): void {
+  setHidden(b, !s);
+  if (!s) {
+    starTarget.delete(b);
+    return;
+  }
+  starTarget.set(b, s);
+  const on = favorites.has(sessionKey(s));
+  const label = on ? tr('Tirar dos favoritos') : tr('Favoritar sessão');
+  if (b.dataset.on !== String(on)) {
+    b.dataset.on = String(on);
+    b.innerHTML = on ? ICONS.starFilled : ICONS.star;
+  }
+  b.classList.toggle('is-on', on);
+  setAttr(b, 'aria-pressed', String(on));
+  setAttr(b, 'aria-label', label);
+  setTitle(b, label);
 }
 
 const TASK_MARK: Record<TaskItem['status'], string> = { completed: '✓', in_progress: '◐', pending: '○' };
@@ -253,6 +293,7 @@ class AgentView {
   private tasks: KeyedList<TaskItem>;
   private teamSec: ReturnType<typeof section>;
   private team: KeyedList<AgentInfo>;
+  private favStar = createFavStar();
   private teamEmpty: HTMLElement;
   private timeline: KeyedList<Activity>;
   private timelineSec: ReturnType<typeof section>;
@@ -282,6 +323,8 @@ class AgentView {
     private terminal: TerminalControl,
     private pty: PtyControl,
   ) {
+    // Estrela marcada no Histórico ou em outra aba: atualiza a daqui.
+    favorites.subscribe(() => this.render());
     this.avatar = createAvatarPlaceholder('lg');
     this.name = h('h2', { class: 'ui-hero__name' });
     this.role = h('span', { class: 'ui-role' });
@@ -408,7 +451,7 @@ class AgentView {
       ['thinking', tr('Raciocínio'), h('span', {}, this.thinkText, this.thinkSel)],
       ['branch', 'Branch'],
       ['perm', tr('Permissões')],
-      ['session', tr('Sessão'), h('span', { class: 'ui-copy-row' }, this.sessionValue, copyButton(() => this.last?.sessionId ?? '', tr('Copiar id da sessão')))],
+      ['session', tr('Sessão'), h('span', { class: 'ui-copy-row' }, this.sessionValue, this.favStar, copyButton(() => this.last?.sessionId ?? '', tr('Copiar id da sessão')))],
       ['start', tr('Início')],
       ['duration', tr('Duração')],
       ['bg', tr('Execução')],
@@ -836,6 +879,7 @@ class AgentView {
       a.kind !== 'main' ? null : codex ? (a.permissionMode ? codexApprovalLabel(a.permissionMode) : null) : provider === 'omp' && !a.permissionMode ? null : permissionLabel(a.permissionMode),
     );
 
+    updateFavStar(this.favStar, favoriteSessionOf(this.ctx, a));
     setText(this.sessionValue, a.sessionId);
     setTitle(this.sessionValue, a.sessionId);
     st.set('start', formatDateTime(a.startedAt));
@@ -908,6 +952,7 @@ class RoomView {
     private ctx: UiContext,
     private pty: PtyControl,
   ) {
+    favorites.subscribe(() => this.render());
     this.newBtn = h('button', { class: 'ui-btn', type: 'button', text: tr('Nova sessão'), title: tr('Abre um Claude Code novo nesta pasta, num terminal interativo'), on: { click: () => this.newSession() } });
     this.newMsg = h('p', { class: 'ui-actions__msg is-error', role: 'status', hidden: true });
     this.swatch = h('span', { class: 'ui-room-hero__swatch', attrs: { 'aria-hidden': 'true' } });
@@ -946,8 +991,12 @@ class RoomView {
     this.agentsSec = section(tr('Agentes'), agentsList, this.agentsEmpty);
     this.agents = new KeyedList<AgentInfo>(agentsList, {
       key: (a) => a.id,
-      create: (a) => createAgentRow(a, (id) => ctx.select({ type: 'agent', id }, { focus: true }), 'sm'),
-      update: (row, a) => updateAgentRow(row, a, ctx.account(a.account), false, ctx.now(), ctx.store.snapshot?.agents),
+      // A estrela fica ao lado da linha (botão dentro de botão não vale) e não seleciona o agente.
+      create: (a) => h('div', { class: 'ui-agent-slot' }, createAgentRow(a, (id) => ctx.select({ type: 'agent', id }, { focus: true }), 'sm'), createFavStar('ui-agent-slot__star')),
+      update: (slot, a) => {
+        updateAgentRow(slot.firstElementChild as HTMLElement, a, ctx.account(a.account), false, ctx.now(), ctx.store.snapshot?.agents);
+        updateFavStar(slot.lastElementChild as HTMLButtonElement, favoriteSessionOf(ctx, a));
+      },
     });
 
     this.tasksBar = createProgress(tr('Progresso das tarefas da sala'));
