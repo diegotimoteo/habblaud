@@ -41,6 +41,9 @@ do meio (0.**3**.0).
 - Agente que ficava "trabalhando" depois de terminar: duas gravações do registro de sessões no mesmo tique do relógio
   e do mesmo tamanho ("busy" -> "idle") não eram relidas. Acontecia mais no Windows (mtime avança a cada ~16 ms).
 - Testes que passavam do prazo ou dependiam de `/` e de permissões POSIX agora passam no Windows.
+- **Histórico do agente do omp com atividades repetidas:** quando o omp trocava o título da sessão, o Habblaud relia o
+  transcript e copiava de novo as atividades já conhecidas para o histórico do agente, que enchia de repetidas e mostrava
+  uma linha do tempo mais curta. Agora cada atividade entra uma vez só.
 
 ## [1.0.3] - 2026-10-16
 
