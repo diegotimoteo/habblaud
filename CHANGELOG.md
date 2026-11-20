@@ -23,7 +23,9 @@ do meio (0.**3**.0).
   ele trabalhando) e as aprovações no escritório: por padrão o personagem levanta a mão enquanto o omp pergunta no
   terminal; com `HABBLAUD_OMP_PERMISSOES=1` (e `omp --approval-mode yolo`), terminal e escritório decidem juntos e
   vale a primeira resposta. `HABBLAUD_OMP=0` desliga; `HABBLAUD_OMP_DIRS` escolhe as pastas; no Docker, o
-  `docker:up` monta só as `sessions/` do omp, somente leitura.
+  `docker:up` monta só as `sessions/` do omp, somente leitura. No topo, a conta do omp tem o seu cartão: uso de 5 h e
+  da semana do provedor do modelo em uso, por `omp usage --json` (a cada 5 min, com sessão aberta;
+  `HABBLAUD_OMP_USAGE=0` desliga), e a dica traz ferramenta, provedor, pasta e sessões abertas.
 
 ### Corrigido
 
@@ -39,6 +41,8 @@ do meio (0.**3**.0).
 - Agente que ficava "trabalhando" depois de terminar: duas gravações do registro de sessões no mesmo tique do relógio
   e do mesmo tamanho ("busy" -> "idle") não eram relidas. Acontecia mais no Windows (mtime avança a cada ~16 ms).
 - Testes que passavam do prazo ou dependiam de `/` e de permissões POSIX agora passam no Windows.
+- Em inglês, espanhol e francês, a contagem até o reinício do uso (e as outras contagens regressivas) saía com o "em"
+  em português ("resets at 18:50 (em 3 h 52 min)"); em francês, as durações de dias usavam "d" no lugar de "j".
 
 ## [1.0.3] - 2026-10-16
 

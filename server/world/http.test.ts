@@ -262,7 +262,8 @@ describe('docker-compose.yml', () => {
     const compose = readFileSync(join(import.meta.dirname, '..', '..', 'docker-compose.yml'), 'utf8');
     const config = readFileSync(join(import.meta.dirname, '..', 'config.ts'), 'utf8');
     const accounts = readFileSync(join(import.meta.dirname, '..', 'sources', 'omp', 'accounts.ts'), 'utf8');
-    const read = [...new Set([...(config + accounts).matchAll(/env\.(HABBLAUD_OMP[A-Z_]*)/g)].map((m) => m[1]))].sort();
+    // HABBLAUD_OMP_USAGE fica de fora: no Docker o uso do omp está sempre desligado (sem omp nem credenciais no container).
+    const read = [...new Set([...(config + accounts).matchAll(/env\.(HABBLAUD_OMP[A-Z_]*)/g)].map((m) => m[1]))].filter((k) => k !== 'HABBLAUD_OMP_USAGE').sort();
     expect(read).toEqual(['HABBLAUD_OMP', 'HABBLAUD_OMP_DIRS']);
     for (const key of read) expect(compose, key).toMatch(new RegExp(`^\\s+${key}: \\$\\{${key}:-\\}$`, 'm'));
   });

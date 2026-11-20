@@ -1,4 +1,5 @@
-import { describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it } from 'vitest';
+import { setLocale } from '../../../shared/i18n';
 import {
   calendarDayDiff,
   clampPercent,
@@ -47,6 +48,7 @@ describe('relativeTime', () => {
 });
 
 describe('formatDuration / formatCountdown', () => {
+  afterEach(() => setLocale('pt-BR'));
   it('formata durações compostas', () => {
     expect(formatDuration(12 * S)).toBe('12 s');
     expect(formatDuration(3 * M + 20 * S)).toBe('3 min');
@@ -60,6 +62,18 @@ describe('formatDuration / formatCountdown', () => {
     expect(formatCountdown(now - 1, now)).toBe('agora');
     expect(formatCountdown(now + 30 * S, now)).toBe('em menos de 1 min');
     expect(formatCountdown(now + 2 * H + 10 * M, now)).toBe('em 2 h 10 min');
+  });
+
+  it('a contagem regressiva sai inteira no idioma ativo (sem "em" em português no meio)', () => {
+    const now = 1_000_000;
+    const expected = { en: 'in 2 h 10 min', es: 'en 2 h 10 min', fr: 'dans 2 h 10 min' } as const;
+    setLocale('fr');
+    expect(formatDuration(3 * D + 4 * H)).toBe('3 j 4 h');
+    expect(compactDuration(3 * D + 4 * H)).toBe('3j4h');
+    for (const l of ['en', 'es', 'fr'] as const) {
+      setLocale(l);
+      expect(formatCountdown(now + 2 * H + 10 * M, now), l).toBe(expected[l]);
+    }
   });
 });
 

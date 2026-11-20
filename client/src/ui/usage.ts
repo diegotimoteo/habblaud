@@ -7,12 +7,14 @@
 // Conta do Codex: os números vêm dos arquivos de sessão dele, que só se renovam enquanto alguma sessão roda; por isso
 // a idade ("há 12 min") fica sempre à mostra. Sem cota nem créditos ("sem cota") nunca vira 0%. Não há o que
 // instalar para o uso: "Como funciona" abre a ajuda na seção do Codex. Sem Opus/Sonnet nem e-mail (só o plano).
+// Conta do omp: o uso vem de `omp usage --json` para o provedor do modelo em uso (sem botão "Como ativar": não há o que
+// instalar); provedor sem janelas de 5 h/7 d (Ollama) mostra "sem uso de 5 h e semana" e a nota do omp.
 import type { AccountInfo } from '../../../shared/types';
 import type { UiContext } from './context';
 import { h, KeyedList, setAttr, setHidden, setStyleVar, setText, setTitle, setVariant } from './dom';
 import { FIVE_HOURS_MS, relativeTime, usageLevel, usageWindowView, WEEK_MS, type UsageWindowView } from './format';
 import { ICONS } from './icons';
-import { isCodex, isOmp } from './provider';
+import { isCodex, isOmp, PROVIDER_NAME, providerOf, showsProviderTag } from './provider';
 import { usageRowFits } from './usage-row';
 import { createAccountChip, createProviderTag, updateAccountChip, updateProviderTag } from './widgets';
 import { tr } from '../../../shared/i18n';
@@ -21,11 +23,13 @@ export const SOURCE_LABEL: Record<NonNullable<AccountInfo['usage']>['source'], s
   cache: tr('cache do /usage do Claude Code'),
   statusline: tr('ao vivo (statusline do Claude Code)'),
   codex: tr('arquivos do Codex'),
+  omp: tr('omp usage'),
 };
 
 /** Origem para mostrar: o arquivo ao vivo pode ter sido gravado pelo mod do Habblaud ou pelo tap. */
 export function sourceLabel(u: NonNullable<AccountInfo['usage']>): string {
   if (u.source === 'statusline' && u.via === 'mod') return tr('ao vivo (mod do Habblaud)');
+  if (u.source === 'omp') return u.ompProvider ? tr('omp usage ({0})', [u.ompProvider]) : tr('omp usage');
   return SOURCE_LABEL[u.source] ?? u.source;
 }
 
@@ -171,7 +175,7 @@ export function cardState(a: Pick<AccountInfo, 'usage' | 'usageStatus'>): CardSt
 export function showsUsageAge(a: Pick<AccountInfo, 'usage' | 'usageStatus' | 'provider'>): boolean {
   if (!a.usage) return false;
   const state = cardState(a);
-  return state === 'stale' || (isCodex(a) && state !== 'empty');
+  return state === 'stale' || ((isCodex(a) || isOmp(a)) && state !== 'empty');
 }
 
 /** Linha embaixo do nome: e-mail; no Codex (sem e-mail), o plano; nas outras, a pasta. */
@@ -185,6 +189,7 @@ export function usageSubtitle(a: Pick<AccountInfo, 'email' | 'plan' | 'configDir
 export function usageMessage(a: Pick<AccountInfo, 'usage' | 'usageStatus' | 'provider'>): [string, string] {
   const state = cardState(a);
   if (state === 'noquota') return [tr('sem cota'), tr('sem cota')];
+  if (isOmp(a)) return a.usage ? [tr('sem uso de 5 h e semana'), tr('sem uso')] : [tr('sem uso informado'), tr('sem uso')];
   if (isCodex(a)) return [tr('sem dados ainda'), tr('sem dados')];
   return [tr('sem dados de uso'), tr('sem dados')];
 }
@@ -199,6 +204,25 @@ export function codexUsageNote(a: Pick<AccountInfo, 'usage' | 'usageStatus' | 'p
   if (state === 'noquota')
     return tr('Na última leitura ({0}), a conta estava sem cota nem créditos para usar (ex.: os créditos do workspace acabaram). Não é 0%: o Codex não informou as janelas. Os números voltam com a próxima sessão.', [age]);
   return tr('O Codex só grava o uso enquanto alguma sessão roda: estes números são da última leitura ({0}).', [age]);
+}
+
+/** Explicação do cartão de uma conta do omp (dica); '' nas outras. */
+export function ompUsageNote(a: Pick<AccountInfo, 'usage' | 'usageStatus' | 'provider'>, now: number): string {
+  if (!isOmp(a)) return '';
+  const u = a.usage;
+  const state = cardState(a);
+  if (!u) return tr('Ainda sem uso: o Habblaud consulta o "omp usage" a cada 5 min enquanto uma sessão do omp está aberta.');
+  if (state === 'empty') {
+    const prov = u.ompProvider ?? tr('o provedor');
+    return u.note
+      ? tr('{0} não informa uso de 5 h nem da semana ao omp: {1}', [prov, u.note])
+      : tr('{0} não informa uso de 5 h nem da semana ao omp.', [prov]);
+  }
+  if (state === 'noquota') return tr('Na última leitura ({0}), o provedor {1} estava sem cota: não é 0%.', [relativeTime(u.fetchedAt, now), u.ompProvider ?? '']);
+  return tr('Uso do provedor {0} (o do modelo em uso), lido do "omp usage" a cada 5 min com uma sessão aberta; esta leitura é de {1}.', [
+    u.ompProvider ?? '',
+    relativeTime(u.fetchedAt, now),
+  ]);
 }
 
 export class UsageCards {
@@ -218,8 +242,8 @@ export class UsageCards {
   }
 
   render(): void {
-    // O omp não tem cota de uso (fora do escopo do suporte a ele): sem cartão na barra.
-    const accounts = (this.ctx.store.snapshot?.accounts ?? []).filter((a) => !isOmp(a));
+    // Toda conta ganha cartão; a do omp mostra o uso do provedor do modelo em uso (omp usage), ver updateTip().
+    const accounts = this.ctx.store.snapshot?.accounts ?? [];
     this.list.sync(accounts);
     this.el.classList.toggle('is-empty', accounts.length === 0);
     setStyleVar(this.el, '--count', String(accounts.length));
@@ -338,12 +362,14 @@ export class UsageCards {
     const r = this.refs.get(card)!;
     const now = this.ctx.now();
     const codex = isCodex(a);
+    const provider = providerOf(a);
+    const omp = isOmp(a);
     updateAccountChip(r.chip, a);
     setStyleVar(card, '--acc', a.color);
     setText(r.name, a.name);
-    updateProviderTag(r.prov, codex ? 'codex' : 'claude', a.name);
+    updateProviderTag(r.prov, provider, a.name);
     setText(r.email, usageSubtitle(a));
-    setAttr(card, 'aria-label', tr('{0}{1}: uso do plano', [a.name, codex ? ' (Codex)' : '']));
+    setAttr(card, 'aria-label', tr('{0}{1}: uso do plano', [a.name, provider === 'claude' ? '' : ` (${PROVIDER_NAME[provider]})`]));
 
     const usage = a.usage;
     const state = cardState(a);
@@ -372,19 +398,21 @@ export class UsageCards {
         r.state,
         codex
           ? tr('Atualizado {0}: o Codex só grava o uso enquanto alguma sessão roda.', [age])
-          : tr('Números de {0}: podem não refletir o uso atual.', [age]),
+          : omp
+            ? tr('Atualizado {0}: o omp usage é lido a cada 5 min enquanto uma sessão do omp está aberta.', [age])
+            : tr('Números de {0}: podem não refletir o uso atual.', [age]),
       );
     }
 
     // Sem números: "sem dados de uso" + "Como ativar" (no Codex, "Como funciona": não há o que instalar). Sem cota:
-    // a mensagem, sem botão.
+    // a mensagem, sem botão. No omp, sem botão (o uso chega sozinho pelo omp usage).
     const [msgLong, msgShort] = usageMessage(a);
     setText(r.msgLong, msgLong);
     setText(r.msgShort, msgShort);
     setHidden(r.msg, state !== 'empty' && state !== 'noquota');
-    setHidden(r.how, state === 'noquota');
+    setHidden(r.how, state === 'noquota' || omp);
     r.msg.classList.toggle('is-noquota', state === 'noquota');
-    setTitle(r.msg, state === 'noquota' ? codexUsageNote(a, now) : '');
+    setTitle(r.msg, state === 'noquota' ? (omp ? ompUsageNote(a, now) : codexUsageNote(a, now)) : '');
     setText(r.howLong, codex ? tr('Como funciona') : tr('Como ativar'));
     setText(r.howShort, codex ? tr('Saber') : tr('Ativar'));
     r.how.dataset.help = codex ? 'codex' : 'usage';
@@ -394,30 +422,42 @@ export class UsageCards {
 
   private updateTip(r: CardRefs, a: AccountInfo, state: CardState, five: UsageWindowView | null, week: UsageWindowView | null, now: number): void {
     const codex = isCodex(a);
-    setText(r.tipTitle, `${a.name}${codex && !/codex/i.test(a.name) ? ' · Codex' : ''}${a.plan ? tr(' · plano {0}', [a.plan]) : ''}`);
+    const provider = providerOf(a);
+    const omp = isOmp(a);
+    const u = a.usage;
+    setText(r.tipTitle, `${a.name}${showsProviderTag(provider, a.name) ? ` · ${PROVIDER_NAME[provider]}` : ''}${a.plan ? tr(' · plano {0}', [a.plan]) : ''}`);
     const rows: [string, string][] = [];
-    if (codex) rows.push([tr('Ferramenta'), 'Codex']);
+    if (provider !== 'claude') rows.push([tr('Ferramenta'), PROVIDER_NAME[provider]]);
+    if (omp && u?.ompProvider) rows.push([tr('Provedor'), u.ompProvider]);
     if (a.email) rows.push(['E-mail', a.email]);
     if (a.organization) rows.push([tr('Organização'), a.organization]);
     if (a.plan) rows.push([tr('Plano'), a.plan]);
     rows.push([tr('Pasta'), a.configDir]);
     rows.push([tr('Sessões abertas'), String(a.sessions)]);
-    const u = a.usage;
     if (u && (u.fiveHour || u.sevenDay)) {
       rows.push([tr('Sessão de 5 h'), five?.summary ?? '—']);
       rows.push([tr('Semana'), week?.summary ?? '—']);
-      // Opus e Sonnet são janelas do Claude: no Codex não existem.
-      const opus = codex ? null : usageWindowView(u.sevenDayOpus, u.fetchedAt, now, WEEK_MS);
-      const sonnet = codex ? null : usageWindowView(u.sevenDaySonnet, u.fetchedAt, now, WEEK_MS);
+      // Opus e Sonnet são janelas do Claude: no Codex e no omp não existem.
+      const opus = codex || omp ? null : usageWindowView(u.sevenDayOpus, u.fetchedAt, now, WEEK_MS);
+      const sonnet = codex || omp ? null : usageWindowView(u.sevenDaySonnet, u.fetchedAt, now, WEEK_MS);
       if (opus) rows.push([tr('Opus (semana)'), opus.summary]);
       if (sonnet) rows.push([tr('Sonnet (semana)'), sonnet.summary]);
     }
     if (u && state === 'noquota') rows.push([tr('Cota'), tr('sem cota nem créditos agora')]);
-    if (u && (state !== 'empty' || codex)) {
+    if (u && (state !== 'empty' || codex || omp)) {
       rows.push([tr('Origem'), sourceLabel(u)]);
       rows.push([tr('Atualizado'), relativeTime(u.fetchedAt, now)]);
     }
     syncRows(r.tipRows, rows);
+
+    // omp: a explicação dele, sem o passo a passo do Claude Code (o uso chega pelo omp usage).
+    if (omp) {
+      const note = ompUsageNote(a, now);
+      setText(r.tipNote, note);
+      setHidden(r.tipNote, !note);
+      setHidden(r.tipSetup, true);
+      return;
+    }
 
     // Codex: a explicação dele, sem o passo a passo do Claude Code (não há o que instalar para o uso).
     if (codex) {

@@ -54,4 +54,14 @@ describe('loadConfig: omp', () => {
     expect(loadConfig({ HOME: h.home, PI_CODING_AGENT_DIR: other }, []).ompDirs).toEqual([other]);
     expect(loadConfig({ HOME: h.home, PI_CODING_AGENT_DIR: other, HABBLAUD_OMP_DIRS: `${h.agent},${other}` }, []).ompDirs).toEqual([h.agent, other]);
   });
+
+  it('uso do plano (omp usage): ligado por padrão; HABBLAUD_OMP_USAGE=0, HABBLAUD_OMP=0 e o Docker desligam', () => {
+    const h = home();
+    const usage = (env: NodeJS.ProcessEnv) => loadConfig({ HOME: h.home, HABBLAUD_IN_DOCKER: '0', ...env }, []).ompUsage;
+    expect(usage({})).toBe(true);
+    expect(usage({ HABBLAUD_OMP_USAGE: '1' })).toBe(true);
+    expect(usage({ HABBLAUD_OMP_USAGE: '0' })).toBe(false);
+    expect(usage({ HABBLAUD_OMP: '0' })).toBe(false);
+    expect(usage({ HABBLAUD_IN_DOCKER: '1' })).toBe(false);
+  });
 });

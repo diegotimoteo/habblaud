@@ -80,8 +80,8 @@ describe('saída limpa (session_exit)', () => {
     expect(r.state.stats.toolCalls).toBe(2);
   });
 
-  it('modelo da última resposta (vale mais que o model_change)', () => {
-    expect(r.state.model).toBe('claude-sonnet-5-5');
+  it('modelo da última resposta (vale mais que o model_change), com o provedor como no model_change', () => {
+    expect(r.state.model).toBe('anthropic/claude-sonnet-5-5');
   });
 
   it('o mesmo arquivo lido de novo gera os mesmos ids (o Office não duplica)', () => {

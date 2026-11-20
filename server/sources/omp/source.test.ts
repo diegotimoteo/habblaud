@@ -14,7 +14,7 @@ import { Office } from '../../model/office';
 import { normalizeCwd } from '../../model/rooms';
 import { tempDir } from '../../test/fixtures';
 import { PRESENT_MS } from './files';
-import { OmpSource, SCAN_MS } from './source';
+import { OmpSource, SCAN_MS, USAGE_EVERY_MS, type OmpSourceOptions } from './source';
 
 setQuiet(true);
 
@@ -29,7 +29,7 @@ afterEach(() => {
   cleanups = [];
 });
 
-function setup(opts: { agents?: number } = {}) {
+function setup(opts: { agents?: number; source?: Partial<OmpSourceOptions> } = {}) {
   const tmp = tempDir();
   const dirs = Array.from({ length: opts.agents ?? 1 }, (_, i) => {
     const dir = join(tmp.dir, i ? `.omp${i + 1}` : '.omp', 'agent');
@@ -50,7 +50,7 @@ function setup(opts: { agents?: number } = {}) {
     now,
   });
   late.office = office;
-  const source = new OmpSource({ accounts, office, dirs, env: {}, home: tmp.dir, now, watch: false });
+  const source = new OmpSource({ accounts, office, dirs, env: {}, home: tmp.dir, now, watch: false, ...opts.source });
   cleanups.unshift(() => source.stop());
   cleanups.push(tmp.cleanup);
 
@@ -373,5 +373,122 @@ describe('fonte do omp: eventos da extensão', () => {
     c.event({ event: 'agent_end' });
     expect(c.agent()).toMatchObject({ status: 'idle' });
     expect(c.agent()!.waitingFor).toBeUndefined();
+  });
+});
+
+const USAGE_FIX = readFileSync(join(FIX, 'usage.json'), 'utf8');
+/** A saída real do omp usage com a leitura feita agora (relógio do teste) e janelas que só reiniciam daqui a 1 h. */
+function usageNow(at: number): string {
+  const j = JSON.parse(USAGE_FIX) as { reports: Array<{ fetchedAt: number; limits: Array<{ window: { resetsAt: number } }> }> };
+  for (const r of j.reports) {
+    r.fetchedAt = at;
+    for (const l of r.limits) l.window.resetsAt = at + 3_600_000;
+  }
+  return JSON.stringify(j);
+}
+
+async function flush(): Promise<void> {
+  const { promise, resolve } = Promise.withResolvers<void>();
+  setImmediate(resolve);
+  await promise;
+}
+
+function usageSetup(usage = true) {
+  const calls: Array<{ bin: string; dir: string }> = [];
+  let fail = false;
+  const c = setup({
+    source: {
+      usage,
+      ompBin: 'omp',
+      runUsage: (bin, dir) => {
+        calls.push({ bin, dir });
+        return fail ? Promise.reject(new Error('sem rede')) : Promise.resolve(usageNow(c.now()));
+      },
+    },
+  });
+  return {
+    c,
+    calls,
+    failNext(v: boolean) {
+      fail = v;
+    },
+    account: () => c.accounts.list(new Map()).find((a) => a.id === '.omp')!,
+  };
+}
+
+describe('fonte do omp: uso do plano via omp usage', () => {
+  it('sem sessão aberta não roda o omp; com sessão, lê as janelas do provedor do modelo em uso a cada 5 min', async () => {
+    const u = usageSetup();
+    u.c.source.boot();
+    u.c.poll();
+    expect(u.calls).toEqual([]);
+    expect(u.account().usage).toBeUndefined();
+
+    u.c.session(u.c.path(), [L.model(u.c, 'anthropic/claude-opus-5-5'), L.user(u.c)]);
+    u.c.advance(SCAN_MS);
+    u.c.poll();
+    expect(u.calls).toEqual([{ bin: 'omp', dir: u.c.dirs[0] }]);
+    await flush();
+    expect(u.account()).toMatchObject({
+      usage: { source: 'omp', ompProvider: 'anthropic', fiveHour: { utilization: 11 }, sevenDay: { utilization: 41 } },
+      usageStatus: 'ok',
+    });
+
+    u.c.advance(4 * 60_000);
+    u.c.poll();
+    expect(u.calls).toHaveLength(1);
+    u.c.advance(USAGE_EVERY_MS - 4 * 60_000);
+    u.c.poll();
+    expect(u.calls).toHaveLength(2);
+  });
+
+  it('troca de provedor lê na hora; provedor sem janelas fica sem números, com a nota do omp', async () => {
+    const u = usageSetup();
+    const path = u.c.path();
+    u.c.session(path, [L.model(u.c, 'anthropic/claude-opus-5-5'), L.user(u.c)]);
+    u.c.source.boot();
+    await flush();
+    expect(u.calls).toHaveLength(1);
+
+    u.c.advance(1_000);
+    u.c.append(path, [L.model(u.c, 'ollama-cloud/gemma4:31b-cloud')]);
+    u.c.poll();
+    expect(u.calls).toHaveLength(2);
+    await flush();
+    const usage = u.account().usage!;
+    expect(usage).toMatchObject({ source: 'omp', ompProvider: 'ollama-cloud' });
+    expect(usage.fiveHour).toBeUndefined();
+    expect(usage.note).toMatch(/^Ollama/);
+  });
+
+  it('falha: o último uso fica e a próxima tentativa é depois de 1 min', async () => {
+    const u = usageSetup();
+    const path = u.c.path();
+    u.c.session(path, [L.model(u.c, 'anthropic/claude-opus-5-5'), L.user(u.c)]);
+    u.c.source.boot();
+    await flush();
+
+    u.failNext(true);
+    u.c.advance(USAGE_EVERY_MS);
+    u.c.poll();
+    await flush();
+    expect(u.calls).toHaveLength(2);
+    expect(u.account().usage).toMatchObject({ ompProvider: 'anthropic', fiveHour: { utilization: 11 } });
+
+    u.failNext(false);
+    u.c.advance(30_000);
+    u.c.poll();
+    expect(u.calls).toHaveLength(2);
+    u.c.advance(30_000);
+    u.c.poll();
+    expect(u.calls).toHaveLength(3);
+  });
+
+  it('desligado (HABBLAUD_OMP_USAGE=0, padrão da fonte): nunca roda o omp', () => {
+    const u = usageSetup(false);
+    u.c.session(u.c.path(), [L.model(u.c, 'anthropic/claude-opus-5-5'), L.user(u.c)]);
+    u.c.source.boot();
+    u.c.poll();
+    expect(u.calls).toEqual([]);
   });
 });
