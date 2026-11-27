@@ -1901,6 +1901,7 @@ export const EN: Readonly<Record<string, string>> = {
   "não consegui abrir o Claude Code: {0}": "couldn't open Claude Code: {0}",
   "Terminal {0} aberto em {1} (conta {2}, retomando {3}).": "Terminal {0} opened in {1} (account {2}, resuming {3}).",
   "Terminal {0} aberto em {1} (conta {2}).": "Terminal {0} opened in {1} (account {2}).",
+  "Terminal {0}: o Claude Code é o processo {1} (aberto por um intermediário).": "Terminal {0}: Claude Code is process {1} (opened by an intermediary).",
   "só dá para encerrar ou assumir o agente principal de uma sessão": "only a session's main agent can be ended or taken over",
   "agente sem processo conhecido": "agent has no known process",
   "a sessão não está mais aberta": "the session is no longer open",

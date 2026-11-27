@@ -1,0 +1,3 @@
+# Texto sempre com LF, também no Windows: as chaves de tradução são o próprio texto do código (tr('...')), e um
+# checkout com CRLF muda as que têm quebra de linha (npm run i18n:check as dava como sem tradução).
+* text=auto eol=lf
