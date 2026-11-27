@@ -208,6 +208,29 @@ describe('fonte do omp: presença pelo arquivo', () => {
     expect(c.agents().filter((a) => a.id === KEY)).toHaveLength(1);
   });
 
+  it('título trocado no lugar numa sessão com mais de 30 atividades: o histórico do detalhe não duplica e mantém a ordem', () => {
+    const c = setup();
+    const path = c.path();
+    c.session(path, [
+      L.model(c),
+      L.user(c),
+      ...Array.from({ length: 40 }, (_, i) => [L.tool(c, `toolu_${i}`, 'bash', { command: `echo ${i}`, i: `Passo ${i}` }), L.result(c, `toolu_${i}`, 'bash')]).flat(),
+    ]);
+    c.source.boot();
+    const before = c.office.detail(KEY)!.history.map((a) => a.id);
+    expect(before.length).toBeGreaterThan(30);
+    c.advance(1_000);
+    c.append(path, [{ type: 'title_change', id: id8(), timestamp: c.ts(), title: 'Título novo', source: 'auto' }]);
+    const raw = readFileSync(path, 'utf8').split('\n');
+    const slot = JSON.stringify({ type: 'title', v: 1, title: 'Título novo', updatedAt: c.ts(), pad: '' });
+    raw[0] = slot.padEnd(raw[0].length - 1 > slot.length ? raw[0].length : slot.length);
+    writeFileSync(path, raw.join('\n'));
+    c.poll();
+    c.poll();
+    expect(c.office.detail(KEY)!.history.map((a) => a.id)).toEqual(before);
+    expect(c.agent()!.title).toBe('Título novo');
+  });
+
   it('parada há 11 min sem session_exit sai; escrita nova a traz de volta', () => {
     const c = setup();
     const path = c.path();
@@ -232,17 +255,34 @@ describe('fonte do omp: presença pelo arquivo', () => {
     expect(c.agents()).toEqual([]);
   });
 
-  it('sessão de uma fixture real em andamento: agente na sala do cwd com o título do title_change', () => {
-    const c = setup();
+  it('sessão de uma fixture real em andamento: cwd sem .git, sala do projeto que as ferramentas tocam, com o título do title_change', () => {
+    const c = setup({ source: { roomByProject: () => true } });
     const id = '01a13a52-fa11-7000-b7af-bfa3171c863d';
     const path = c.path(id);
     copyFileSync(join(FIX, 'main-task.jsonl'), path);
     utimesSync(path, new Date(c.now()), new Date(c.now())); // a cópia pode manter o mtime da fixture
     c.source.boot();
     const a = c.agent(`omp:${id}`)!;
-    expect(a).toMatchObject({ provider: 'omp', sessionId: id, roomId: normalizeCwd('C:\\Users\\dev\\proj'), title: 'Título da sessão', status: 'working' });
+    expect(a).toMatchObject({ provider: 'omp', sessionId: id, roomId: normalizeCwd('C:\\Users\\dev\\proj\\src'), title: 'Título da sessão', status: 'working' });
     expect(a.model).toBe('claude-fable-5-1');
     expect(a.stats.tokensIn).toBeGreaterThan(0);
+  });
+
+  it('sala por projeto desligada (padrão) fica no cwd; ligar em Configurações muda a sala no próximo ciclo, sem reiniciar', () => {
+    let on = false;
+    const c = setup({ source: { roomByProject: () => on } });
+    const id = '01a13a52-fa11-7000-b7af-bfa3171c863d';
+    const path = c.path(id);
+    copyFileSync(join(FIX, 'main-task.jsonl'), path);
+    utimesSync(path, new Date(c.now()), new Date(c.now()));
+    c.source.boot();
+    expect(c.agent(`omp:${id}`)!.roomId).toBe(normalizeCwd('C:\\Users\\dev\\proj'));
+    on = true;
+    c.poll();
+    expect(c.agent(`omp:${id}`)!.roomId).toBe(normalizeCwd('C:\\Users\\dev\\proj\\src'));
+    on = false;
+    c.poll();
+    expect(c.agent(`omp:${id}`)!.roomId).toBe(normalizeCwd('C:\\Users\\dev\\proj'));
   });
 
   it('duas agent dirs: uma conta por pasta, a sessão leva a conta da sua pasta; HABBLAUD_OMP sem pastas = sem fonte', () => {
@@ -265,6 +305,36 @@ describe('fonte do omp: eventos da extensão', () => {
     c.session(c.path(), [L.model(c), L.user(c, 'Olá'), L.tool(c, 'toolu_9', 'bash', { command: 'ls' })]);
     c.poll();
     expect(c.agent()).toMatchObject({ title: 'Olá', status: 'working', activity: { tool: 'Bash' } });
+  });
+
+  it('sessão retomada (arquivo termina em session_exit) entra com session_start e fica enquanto bate', () => {
+    const c = setup();
+    const path = c.path();
+    c.session(path, [L.model(c), L.user(c), L.stop(c), L.exit(c)]);
+    c.source.boot();
+    expect(c.agent()).toBeUndefined();
+    c.advance(1_000);
+    c.event({ event: 'session_start', sessionFile: path });
+    expect(c.agent()!.status).toBe('idle');
+    c.advance(OMP_HEARTBEAT_MS);
+    c.event({ event: 'heartbeat' });
+    c.poll();
+    expect(c.agent()!.status).toBe('idle');
+    c.event({ event: 'session_shutdown' });
+    expect(c.agent()!.status).toBe('offline');
+  });
+
+  it('session_start com models expõe AgentInfo.models', () => {
+    const c = setup();
+    c.event({ event: 'session_start', models: ['anthropic/a', 'openai/b'] });
+    expect(c.agent()!.models).toEqual(['anthropic/a', 'openai/b']);
+  });
+
+  it('heartbeat com models, sem session_start antes (Habblaud reiniciou), expõe AgentInfo.models', () => {
+    const c = setup();
+    c.event({ event: 'heartbeat', sessionFile: c.path(), models: ['anthropic/a'] });
+    c.event({ event: 'session_start', sessionFile: c.path() });
+    expect(c.agent()!.models).toEqual(['anthropic/a']);
   });
 
   it('agent_start/agent_end mudam o status; tool_start vira atividade imediata; tool_end não muda nada', () => {

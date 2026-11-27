@@ -55,6 +55,15 @@ export interface ApiDeps {
    */
   messages?: (req: IncomingMessage, res: ServerResponse, path: string) => void;
   /**
+   * Bate-papo paralelo com o agente do omp (server/asides/http.ts): `page` serve /api/asides (a janela lateral do
+   * terminal) e `progress` recebe a resposta da extensão em POST /api/omp/aside. Só existem com as mensagens ligadas
+   * (mesmo `ServerConfig.messages`); as travas ficam aqui.
+   */
+  asides?: {
+    page: (req: IncomingMessage, res: ServerResponse, path: string, url: URL) => void;
+    progress: (req: IncomingMessage, res: ServerResponse) => Promise<void>;
+  };
+  /**
    * Terminal interativo e ações nos agentes (/api/pty/*, POST /api/agents/:id/stop|takeover; http/pty.ts).
    * Ausente = desligado (sem HABBLAUD_PTY=1, Docker, sem node-pty ou sem bind local).
    */
@@ -71,6 +80,8 @@ export interface ApiDeps {
    * loopback.
    */
   ompLive?: OmpLive;
+  /** Configurações › Sala do omp segue o projeto (OmpSettings): POST /api/omp/settings. Ausente = sem omp (404). */
+  setOmpRoomByProject?: (on: boolean) => boolean;
   /** Novo agente pelo escritório (/api/spawn e, para o auxiliar do host, /api/host/spawn/*; server/spawn/spawn.ts). */
   spawn?: SpawnService;
   /** Pastas sugeridas no "Novo agente" (GET /api/spawn/folders; spawn/folders.ts): projetos recentes. */
@@ -137,6 +148,9 @@ function isLocalOnlyPath(path: string): boolean {
     path.startsWith('/api/host/')
   );
 }
+
+const MESSAGES_OFF = (): string =>
+  tr('mensagens pelo escritório desligadas: só funcionam com o Habblaud acessível apenas pelo próprio computador (e sem HABBLAUD_MENSAGENS=0)');
 
 function isMessagesPath(path: string): boolean {
   return (
@@ -293,6 +307,12 @@ export function createApiHandler(deps: ApiDeps): (req: IncomingMessage, res: Ser
     if (typeof body?.enabled !== 'boolean') throw new HttpError(400, tr('esperado {enabled: boolean}'));
     office.setDemo(body.enabled);
     sendJson(res, 200, { ok: true, demo: office.isDemo() });
+  };
+
+  const handleOmpSettings = async (req: IncomingMessage, res: ServerResponse, set: (on: boolean) => boolean) => {
+    const body = (await readJson(req)) as { roomByProject?: unknown };
+    if (typeof body?.roomByProject !== 'boolean') throw new HttpError(400, tr('esperado {roomByProject: boolean}'));
+    sendJson(res, 200, { ok: true, roomByProject: set(body.roomByProject) });
   };
 
   const handleCharacter = async (req: IncomingMessage, res: ServerResponse, id: string, method: string) => {
@@ -507,6 +527,23 @@ export function createApiHandler(deps: ApiDeps): (req: IncomingMessage, res: Ser
       } else handleOmpEvent(req, res, { live: deps.ompLive }).catch((err) => fail(res, err));
       return true;
     }
+    if (path === '/api/omp/aside') {
+      // A resposta do bate-papo paralelo vem da extensão do omp: a mesma trava dos eventos dela (só o próprio computador).
+      if (method !== 'POST') methodNotAllowed(res, 'POST');
+      else if (!deps.asides) sendJson(res, 403, { error: MESSAGES_OFF() });
+      else if (!trusted(req) || (!deps.inDocker && !isLoopbackAddress(req.socket.remoteAddress))) {
+        sendJson(res, 403, { error: denied(req, tr('perguntas paralelas só pelo próprio computador (http://localhost ou http://127.0.0.1)')) });
+      } else deps.asides.progress(req, res).catch((err) => fail(res, err));
+      return true;
+    }
+    if (path === '/api/asides' || path.startsWith('/api/asides/')) {
+      // Perguntar manda texto ao modelo (a trava das mensagens); ler mostra a conversa (a trava do terminal).
+      if (!deps.asides) sendJson(res, 403, { error: MESSAGES_OFF() });
+      else if (!trusted(req, isRead ? 'terminal' : 'messages')) {
+        sendJson(res, 403, { error: denied(req, tr('perguntas paralelas só pelo próprio computador (http://localhost ou http://127.0.0.1)')) });
+      } else deps.asides.page(req, res, path, url);
+      return true;
+    }
     if (path === '/api/spawn' || path.startsWith('/api/spawn/')) {
       // Abre uma sessão nova no app do Claude: roda código no computador, então a mesma trava das mensagens.
       const spawn = deps.spawn;
@@ -706,6 +743,13 @@ export function createApiHandler(deps: ApiDeps): (req: IncomingMessage, res: Ser
       if (method !== 'POST') methodNotAllowed(res, 'POST');
       else if (isRemote(req)) sendJson(res, 403, { error: tr('não liberado no acesso remoto (veja HABBLAUD_REMOTE_ALLOW)') });
       else handleDemo(req, res).catch((err) => fail(res, err));
+      return true;
+    }
+    if (path === '/api/omp/settings') {
+      // Muda a sala de todos os agentes do omp: só pelo computador (isLocalOnlyPath já barra a porta remota).
+      if (!deps.setOmpRoomByProject) sendJson(res, 404, { error: tr('desligado') });
+      else if (method !== 'POST') methodNotAllowed(res, 'POST');
+      else handleOmpSettings(req, res, deps.setOmpRoomByProject).catch((err) => fail(res, err));
       return true;
     }
     if (path === '/api/updates') {
